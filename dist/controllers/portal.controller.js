@@ -58,25 +58,6 @@ class PortalController {
                     },
                 });
             }
-            if (leases.length === 0) {
-                leases = [{
-                        id: 'lease-default-101',
-                        propertyName: 'Apex Heights Apartments',
-                        unitNumber: 'Unit 204',
-                        rentAmount: 1850,
-                        depositAmount: 1850,
-                        securityDeposit: 1850,
-                        startDate: '2025-08-01',
-                        endDate: '2026-07-31',
-                        leaseStart: '2025-08-01',
-                        leaseEnd: '2026-07-31',
-                        status: 'Active',
-                        tenantName: tenant ? `${tenant.firstName} ${tenant.lastName}` : 'Sarah Connor',
-                        tenant: { firstName: tenant?.firstName || 'Sarah', lastName: tenant?.lastName || 'Connor', email: tenant?.email || 'sarah@tenant.com' },
-                        property: { name: 'Apex Heights Apartments', streetAddress: '123 Harbor View Dr', city: 'Austin', state: 'TX', zip: '78701' },
-                        unit: { unitNumber: '204', bedrooms: 2, bathrooms: 2, squareFootage: 1100, floor: 2 },
-                    }];
-            }
             return (0, apiResponse_1.sendSuccess)({ res, data: leases });
         }
         catch (error) {
@@ -90,27 +71,7 @@ class PortalController {
             if (!lease) {
                 return (0, apiResponse_1.sendSuccess)({
                     res,
-                    data: {
-                        id: 'lease-default-101',
-                        propertyName: 'Apex Heights Apartments',
-                        unitNumber: 'Unit 204',
-                        rentAmount: 1850,
-                        securityDeposit: 1850,
-                        leaseStart: '2025-08-01',
-                        leaseEnd: '2026-07-31',
-                        status: 'Active',
-                        tenantName: tenant ? `${tenant.firstName} ${tenant.lastName}` : 'Sarah Connor',
-                        property: { name: 'Apex Heights Apartments', streetAddress: '123 Harbor View Dr', city: 'Austin', state: 'TX', zip: '78701' },
-                        unit: { unitNumber: '204', bedrooms: 2, bathrooms: 2, squareFootage: 1100, floor: 2 },
-                        tenant: {
-                            id: tenant?.id || 't-1',
-                            firstName: tenant?.firstName || 'Sarah',
-                            lastName: tenant?.lastName || 'Connor',
-                            email: tenant?.email || 'sarah@tenant.com',
-                            phone: tenant?.phone || '555-0199',
-                            status: 'Active',
-                        },
-                    },
+                    data: null,
                 });
             }
             return (0, apiResponse_1.sendSuccess)({
