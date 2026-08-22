@@ -1,0 +1,76 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const app_1 = __importDefault(require("./app"));
+const env_1 = require("./config/env");
+const logger_1 = require("./config/logger");
+const database_1 = __importDefault(require("./config/database"));
+const companyHelper_js_1 = require("./utils/companyHelper.js");
+async function bootstrapDb() {
+    try {
+        logger_1.logger.info('⚙️ Bootstrapping database schema with new columns...');
+        const ownerCols = [
+            'ALTER TABLE owner_documents ADD COLUMN ownerId VARCHAR(191) NULL;',
+            'ALTER TABLE owner_documents ADD COLUMN propertyId VARCHAR(191) NULL;',
+            'ALTER TABLE owner_documents ADD COLUMN companyId VARCHAR(191) NULL;'
+        ];
+        for (const sql of ownerCols) {
+            await database_1.default.$executeRawUnsafe(sql).catch((e) => {
+                // Ignore duplicate column error (1060) or already existing column warnings
+                if (!e.message.includes('1060') && !e.message.includes('Duplicate column')) {
+                    logger_1.logger.warn(`DDL execution warning: ${e.message}`);
+                }
+            });
+        }
+        const tenantCols = [
+            'ALTER TABLE tenant_documents ADD COLUMN tenantId VARCHAR(191) NULL;',
+            'ALTER TABLE tenant_documents ADD COLUMN propertyId VARCHAR(191) NULL;',
+            'ALTER TABLE tenant_documents ADD COLUMN buildingId VARCHAR(191) NULL;',
+            'ALTER TABLE tenant_documents ADD COLUMN unitId VARCHAR(191) NULL;',
+            'ALTER TABLE tenant_documents ADD COLUMN companyId VARCHAR(191) NULL;'
+        ];
+        for (const sql of tenantCols) {
+            await database_1.default.$executeRawUnsafe(sql).catch((e) => {
+                if (!e.message.includes('1060') && !e.message.includes('Duplicate column')) {
+                    logger_1.logger.warn(`DDL execution warning: ${e.message}`);
+                }
+            });
+        }
+        logger_1.logger.info('✅ Database schema bootstrap completed.');
+    }
+    catch (error) {
+        logger_1.logger.error(error, '❌ Failed to bootstrap database schema:');
+    }
+}
+// Connect and verify database connection
+database_1.default.$connect()
+    .then(async () => {
+    logger_1.logger.info('🔌 MySQL Database connected successfully via Prisma Client!');
+    await bootstrapDb();
+    await (0, companyHelper_js_1.autoHealMissingCompanyIds)();
+})
+    .catch((error) => {
+    logger_1.logger.error(error, '❌ Failed to connect to the MySQL database:');
+});
+const server = app_1.default.listen(env_1.env.PORT, () => {
+    logger_1.logger.info(`🚀 WhatsLandlord ERP Backend Server running on http://localhost:${env_1.env.PORT}${env_1.env.API_PREFIX}`);
+    logger_1.logger.info(`Environment: ${env_1.env.NODE_ENV}`);
+});
+server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+        logger_1.logger.error(`❌ Port ${env_1.env.PORT} is already in use by another process.`);
+        process.exit(1);
+    }
+    else {
+        logger_1.logger.error(error, 'Server error:');
+    }
+});
+process.on('unhandledRejection', (reason) => {
+    logger_1.logger.error(reason, 'Unhandled Rejection caught:');
+});
+process.on('uncaughtException', (error) => {
+    logger_1.logger.error(error, 'Uncaught Exception caught:');
+    process.exit(1);
+});

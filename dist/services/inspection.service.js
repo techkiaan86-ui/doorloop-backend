@@ -1,0 +1,402 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.inspectionService = exports.InspectionService = void 0;
+const database_1 = __importDefault(require("../config/database"));
+const auditHelper_1 = require("../utils/auditHelper");
+class InspectionService {
+    async getInspectionById(id, companyId) {
+        return database_1.default.inspection.findFirst({
+            where: {
+                id,
+                ...(companyId ? { companyId } : {}),
+            },
+            include: {
+                moveIn: {
+                    include: {
+                        lease: {
+                            include: {
+                                tenant: true,
+                            },
+                        },
+                        unit: {
+                            include: {
+                                property: true,
+                            },
+                        },
+                    },
+                },
+                moveOut: {
+                    include: {
+                        lease: {
+                            include: {
+                                tenant: true,
+                            },
+                        },
+                        unit: {
+                            include: {
+                                property: true,
+                            },
+                        },
+                    },
+                },
+                rooms: {
+                    include: {
+                        items: {
+                            include: {
+                                photos: true,
+                            },
+                            orderBy: { sortOrder: 'asc' },
+                        },
+                    },
+                    orderBy: { sortOrder: 'asc' },
+                },
+                assignedInspector: true,
+            },
+        });
+    }
+    async startInspection(data) {
+        const moveIn = await database_1.default.moveIn.findFirst({
+            where: { id: data.moveInId, ...(data.companyId ? { companyId: data.companyId } : {}) },
+            include: { lease: true },
+        });
+        if (!moveIn)
+            throw new Error('Move In record not found');
+        if (moveIn.status === 'COMPLETED')
+            throw new Error('Move In is already completed');
+        const template = await database_1.default.inspectionTemplate.findFirst({
+            where: { id: data.templateId, ...(data.companyId ? { companyId: data.companyId } : {}) },
+            include: {
+                rooms: {
+                    include: { items: true },
+                },
+            },
+        });
+        if (!template)
+            throw new Error('Inspection template not found');
+        if (!template.active)
+            throw new Error('Inspection template is inactive');
+        // Generate unique inspection number, e.g. MI-123456
+        const count = await database_1.default.inspection.count();
+        const formattedCount = String(count + 1).padStart(6, '0');
+        const prefix = template.type === 'MOVE_OUT' ? 'MO' : 'MI';
+        const inspectionNumber = `${prefix}-${formattedCount}`;
+        return database_1.default.$transaction(async (tx) => {
+            // 1. Update MoveIn status
+            await tx.moveIn.update({
+                where: { id: data.moveInId },
+                data: { status: 'INSPECTION_IN_PROGRESS' },
+            });
+            // 2. Create Inspection with nested rooms and items
+            const inspection = await tx.inspection.create({
+                data: {
+                    inspectionNumber,
+                    type: template.type === 'MOVE_OUT' ? 'MOVE_OUT' : 'MOVE_IN',
+                    moveInId: data.moveInId,
+                    templateId: data.templateId,
+                    templateName: template.name,
+                    templateVersion: 1, // Default snapshot version
+                    status: 'DRAFT',
+                    createdBy: data.createdBy || 'System',
+                    companyId: data.companyId,
+                    startedAt: new Date(),
+                    rooms: template.rooms && template.rooms.length > 0
+                        ? {
+                            create: template.rooms.map((roomTemp) => ({
+                                name: roomTemp.name,
+                                sortOrder: roomTemp.sortOrder,
+                                items: roomTemp.items && roomTemp.items.length > 0
+                                    ? {
+                                        create: roomTemp.items.map((itemTemp) => ({
+                                            label: itemTemp.label,
+                                            required: itemTemp.required,
+                                            sortOrder: itemTemp.sortOrder,
+                                            completed: false,
+                                        })),
+                                    }
+                                    : undefined,
+                            })),
+                        }
+                        : undefined,
+                },
+            });
+            const validUserId = await (0, auditHelper_1.getValidUserId)(data.userId, tx);
+            await tx.auditLog.create({
+                data: {
+                    action: `Inspection ${inspectionNumber} Started`,
+                    userId: validUserId,
+                    module: 'Leasing',
+                    object: `Inspection ${inspection.id}`,
+                    ip: '127.0.0.1',
+                    status: 'Success',
+                },
+            });
+            return inspection;
+        }, { maxWait: 10000, timeout: 30000 });
+    }
+    async updateInspectionDraft(id, data, companyId) {
+        const inspection = await database_1.default.inspection.findFirst({
+            where: { id, ...(companyId ? { companyId } : {}) },
+        });
+        if (!inspection)
+            throw new Error('Inspection not found');
+        if (inspection.status === 'COMPLETED')
+            throw new Error('Cannot edit a completed inspection');
+        return database_1.default.$transaction(async (tx) => {
+            // Update basic fields
+            const updateData = {};
+            if (data.overallNotes !== undefined)
+                updateData.overallNotes = data.overallNotes;
+            if (data.managerNotes !== undefined)
+                updateData.managerNotes = data.managerNotes;
+            if (data.assignedInspectorId !== undefined) {
+                updateData.assignedInspectorId = data.assignedInspectorId || null;
+                if (data.assignedInspectorId && data.assignedInspectorId !== inspection.assignedInspectorId) {
+                    updateData.assignedBy = data.userId || 'User';
+                    updateData.assignedAt = new Date();
+                }
+                else if (!data.assignedInspectorId) {
+                    updateData.assignedBy = null;
+                    updateData.assignedAt = null;
+                }
+            }
+            if (data.tenantSignature !== undefined) {
+                updateData.tenantSignature = data.tenantSignature;
+                updateData.tenantSignedAt = data.tenantSignature ? new Date() : null;
+            }
+            if (data.inspectorSignature !== undefined) {
+                updateData.inspectorSignature = data.inspectorSignature;
+                updateData.inspectorSignedAt = data.inspectorSignature ? new Date() : null;
+            }
+            if (data.status)
+                updateData.status = data.status;
+            let templateChanged = false;
+            if (data.templateId && data.templateId !== inspection.templateId) {
+                const template = await tx.inspectionTemplate.findFirst({
+                    where: { id: data.templateId, ...(companyId ? { companyId } : {}) },
+                    include: {
+                        rooms: {
+                            include: { items: true },
+                        },
+                    },
+                });
+                if (template) {
+                    updateData.templateId = template.id;
+                    updateData.templateName = template.name;
+                    templateChanged = true;
+                    // Clean existing checklist rooms & items (database cascade handles items)
+                    await tx.inspectionRoom.deleteMany({ where: { inspectionId: id } });
+                    // Populate new rooms & items from selected template
+                    if (template.rooms && template.rooms.length > 0) {
+                        for (const roomTemp of template.rooms) {
+                            await tx.inspectionRoom.create({
+                                data: {
+                                    inspectionId: id,
+                                    name: roomTemp.name,
+                                    sortOrder: roomTemp.sortOrder,
+                                    items: roomTemp.items && roomTemp.items.length > 0
+                                        ? {
+                                            create: roomTemp.items.map((itemTemp) => ({
+                                                label: itemTemp.label,
+                                                required: itemTemp.required,
+                                                sortOrder: itemTemp.sortOrder,
+                                                completed: false,
+                                            })),
+                                        }
+                                        : undefined,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            await tx.inspection.update({
+                where: { id },
+                data: updateData,
+            });
+            // Update room items
+            if (data.items && Array.isArray(data.items) && !templateChanged) {
+                for (const item of data.items) {
+                    const itemUpdateData = {};
+                    if (item.condition !== undefined)
+                        itemUpdateData.condition = item.condition;
+                    if (item.notes !== undefined)
+                        itemUpdateData.notes = item.notes;
+                    if (item.completed !== undefined)
+                        itemUpdateData.completed = item.completed;
+                    const updatedItem = await tx.inspectionItem.update({
+                        where: { id: item.id },
+                        data: itemUpdateData,
+                    });
+                    // Handle Photos if provided
+                    if (item.photos && Array.isArray(item.photos)) {
+                        // Delete existing photos for this item to sync
+                        await tx.inspectionPhoto.deleteMany({ where: { itemId: item.id } });
+                        for (let pIndex = 0; pIndex < item.photos.length; pIndex++) {
+                            const photo = item.photos[pIndex];
+                            await tx.inspectionPhoto.create({
+                                data: {
+                                    itemId: updatedItem.id,
+                                    url: photo.url,
+                                    caption: photo.caption || '',
+                                    sortOrder: photo.sortOrder !== undefined ? photo.sortOrder : pIndex,
+                                    uploadedBy: data.userId || 'User',
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            return tx.inspection.findUnique({
+                where: { id },
+                include: {
+                    assignedInspector: true,
+                    rooms: {
+                        include: {
+                            items: {
+                                include: { photos: true },
+                            },
+                        },
+                    },
+                },
+            });
+        }, {
+            maxWait: 10000,
+            timeout: 30000
+        });
+    }
+    async completeInspection(id, userId, companyId) {
+        const inspection = await database_1.default.inspection.findFirst({
+            where: { id, ...(companyId ? { companyId } : {}) },
+            include: {
+                rooms: {
+                    include: {
+                        items: true,
+                    },
+                },
+            },
+        });
+        if (!inspection)
+            throw new Error('Inspection not found');
+        if (inspection.status === 'COMPLETED') {
+            if (inspection.moveInId) {
+                await database_1.default.moveIn.update({
+                    where: { id: inspection.moveInId },
+                    data: { status: 'INSPECTION_COMPLETED' },
+                });
+            }
+            if (inspection.moveOutId) {
+                await database_1.default.moveOut.update({
+                    where: { id: inspection.moveOutId },
+                    data: { status: 'INSPECTION_COMPLETED' },
+                });
+            }
+            return inspection;
+        }
+        // Validation checks:
+        // 1. Required items must be completed & have a condition selected
+        for (const room of inspection.rooms) {
+            for (const item of room.items) {
+                if (item.required) {
+                    if (!item.completed || !item.condition) {
+                        throw new Error(`Required item "${item.label}" in room "${room.name}" is incomplete or missing a condition rating.`);
+                    }
+                }
+            }
+        }
+        // 2. Signatures must be present
+        if (!inspection.inspectorSignature) {
+            throw new Error('Inspector signature is required to complete the inspection.');
+        }
+        if (!inspection.tenantSignature) {
+            throw new Error('Tenant signature is required to complete the inspection.');
+        }
+        return database_1.default.$transaction(async (tx) => {
+            const completed = await tx.inspection.update({
+                where: { id },
+                data: {
+                    status: 'COMPLETED',
+                    completedAt: new Date(),
+                },
+            });
+            if (inspection.moveInId) {
+                await tx.moveIn.update({
+                    where: { id: inspection.moveInId },
+                    data: {
+                        status: 'INSPECTION_COMPLETED',
+                    },
+                });
+            }
+            if (inspection.moveOutId) {
+                await tx.moveOut.update({
+                    where: { id: inspection.moveOutId },
+                    data: {
+                        status: 'INSPECTION_COMPLETED',
+                    },
+                });
+            }
+            const validUserId = await (0, auditHelper_1.getValidUserId)(userId, tx);
+            await tx.auditLog.create({
+                data: {
+                    action: `Inspection ${inspection.inspectionNumber} Completed`,
+                    userId: validUserId,
+                    module: 'Leasing',
+                    object: `Inspection ${id}`,
+                    ip: '127.0.0.1',
+                    status: 'Success',
+                },
+            });
+            return completed;
+        });
+    }
+    async reopenInspection(id, userId, companyId) {
+        const inspection = await database_1.default.inspection.findFirst({
+            where: { id, ...(companyId ? { companyId } : {}) },
+        });
+        if (!inspection)
+            throw new Error('Inspection not found');
+        return database_1.default.$transaction(async (tx) => {
+            const reopened = await tx.inspection.update({
+                where: { id },
+                data: {
+                    status: 'DRAFT',
+                    completedAt: null,
+                },
+            });
+            if (inspection.moveInId) {
+                await tx.moveIn.update({
+                    where: { id: inspection.moveInId },
+                    data: {
+                        status: 'INSPECTION_IN_PROGRESS',
+                    },
+                });
+            }
+            const validUserId = await (0, auditHelper_1.getValidUserId)(userId, tx);
+            await tx.auditLog.create({
+                data: {
+                    action: `Inspection ${inspection.inspectionNumber} Reopened`,
+                    userId: validUserId,
+                    module: 'Leasing',
+                    object: `Inspection ${id}`,
+                    ip: '127.0.0.1',
+                    status: 'Success',
+                },
+            });
+        });
+    }
+    async getInspectors(companyId) {
+        return database_1.default.user.findMany({
+            where: companyId ? { companyId } : {},
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+            },
+        });
+    }
+}
+exports.InspectionService = InspectionService;
+exports.inspectionService = new InspectionService();
