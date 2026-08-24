@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc",
-    "start": "node dist/pre_push_clean.js && npx prisma db push && node dist/prisma/seed.js && node dist/server.js",
+    "start": "node dist/pre_push_clean.js && npx prisma db push && npx tsx prisma/seed.ts && node dist/server.js",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -27,6 +27,8 @@
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
     "pino": "^9.6.0",
+    "prisma": "^6.3.0",
+    "tsx": "^4.19.2",
     "uuid": "^11.0.5",
     "zod": "^3.24.1"
   },
@@ -40,8 +42,6 @@
     "@types/node": "^22.20.1",
     "@types/uuid": "^10.0.0",
     "pino-pretty": "^13.0.0",
-    "prisma": "^6.3.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }
 }
