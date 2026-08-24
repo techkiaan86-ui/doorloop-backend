@@ -188,12 +188,13 @@ async function main() {
   const passwordHash = '$2b$12$OJZe0UwVTCpj0t6tfk0PNObncvFBfgPpCyXUYi5G0GVkWavbpyicy'; // password: 'admin123'
   
   // Apex Users
+  const passwordHash123456 = '$2b$12$yN5vV7kzWQ5r3wuEZU3gZ.2bYVUYVF7GeErP6llEECZdCZw04htgi'; // password: '123456'
   await prisma.user.upsert({
     where: { email: 'admin@apexpm.com' },
-    update: { roleId: adminRole.id, companyId: apex.id },
+    update: { roleId: adminRole.id, companyId: apex.id, passwordHash: passwordHash123456 },
     create: {
       email: 'admin@apexpm.com',
-      passwordHash,
+      passwordHash: passwordHash123456,
       firstName: 'John',
       lastName: 'Doe',
       phone: '(512) 555-0100',
