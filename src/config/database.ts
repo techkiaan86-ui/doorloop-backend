@@ -46,6 +46,7 @@ export const prisma = prismaRaw.$extends({
               if (model === 'Lease') queryArgs.where.tenantId = tenantId;
               if (model === 'Invoice') queryArgs.where.tenantId = tenantId;
               if (model === 'TenantDocument') queryArgs.where.tenantId = tenantId;
+              if (model === 'ScreeningReport') queryArgs.where.tenantId = tenantId;
             } else if (role === 'Owner' && ownerId) {
               if (model === 'Owner') queryArgs.where.id = ownerId;
               if (model === 'Property') queryArgs.where.ownerId = ownerId;

@@ -44,6 +44,8 @@ exports.prisma = prismaRaw.$extends({
                                 queryArgs.where.tenantId = tenantId;
                             if (model === 'TenantDocument')
                                 queryArgs.where.tenantId = tenantId;
+                            if (model === 'ScreeningReport')
+                                queryArgs.where.tenantId = tenantId;
                         }
                         else if (role === 'Owner' && ownerId) {
                             if (model === 'Owner')
