@@ -27,7 +27,7 @@ export const prisma = prismaRaw.$extends({
           'Property', 'Owner', 'Tenant', 'StaffProfile', 'User', 
           'Document', 'OwnerDocument', 'TenantDocument', 'Lease',
           'Invoice', 'RentPayment', 'WorkOrder', 'Announcement', 'Violation', 'ServiceRequest',
-          'CrmLead'
+          'CrmLead', 'ScreeningReport'
         ];
 
         // Models that require property relation-based companyId filtering
@@ -51,6 +51,9 @@ export const prisma = prismaRaw.$extends({
               if (model === 'Owner') queryArgs.where.id = ownerId;
               if (model === 'Property') queryArgs.where.ownerId = ownerId;
               if (model === 'OwnerDocument') queryArgs.where.ownerId = ownerId;
+              if (model === 'Lease') queryArgs.where.property = { ownerId };
+              if (model === 'Tenant') queryArgs.where.unit = { property: { ownerId } };
+              if (model === 'WorkOrder') queryArgs.where.property = { ownerId };
             } else if (role === 'Maintenance Staff' && staffId) {
               if (model === 'WorkOrder') queryArgs.where.staffId = staffId;
               if (model === 'StaffProfile') queryArgs.where.id = staffId;
