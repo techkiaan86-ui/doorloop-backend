@@ -4,76 +4,31 @@ const client_1 = require("@prisma/client");
 async function main() {
     const prisma = new client_1.PrismaClient();
     try {
-        console.log('🧹 DATABASE WIPE: Clearing all tables to start fresh on Railway...');
+        console.log('🧹 DYNAMIC DATABASE WIPE: Clearing all tables to start fresh on Railway...');
         // 1. Disable FK checks
         await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
-        const tables = [
-            'saas_invoices',
-            'rent_payments',
-            'invoices',
-            'leases',
-            'move_ins',
-            'move_outs',
-            'lease_renewals',
-            'inspection_photos',
-            'inspection_items',
-            'inspection_rooms',
-            'inspections',
-            'inspection_template_items',
-            'inspection_template_rooms',
-            'inspection_templates',
-            'tenant_documents',
-            'owner_documents',
-            'documents',
-            'announcements',
-            'notifications',
-            'ai_chat_logs',
-            'bank_accounts',
-            'coa_accounts',
-            'journal_entry_lines',
-            'journal_entries',
-            'charge_installments',
-            'charges',
-            'deposits',
-            'payment_plans',
-            'insurance_policies',
-            'crm_leads',
-            'violations',
-            'screening_reports',
-            'service_requests',
-            'work_orders',
-            'user_assignments',
-            'company_integrations',
-            'company_users',
-            'staff_profiles',
-            'vendors',
-            'tenants',
-            'owners',
-            'units',
-            'buildings',
-            'properties',
-            'users',
-            'companies',
-            'roles',
-            'permissions',
-            'audit_logs'
-        ];
-        for (const table of tables) {
-            try {
-                await prisma.$executeRawUnsafe(`DELETE FROM ${table};`);
-                console.log(`✅ Cleared table: ${table}`);
-            }
-            catch (err) {
-                // Table might not exist yet, skip safely
-                console.log(`ℹ️ Table ${table} skipped (details: ${err.message})`);
+        // 2. Query all table names dynamically from database schema
+        const tablesResult = await prisma.$queryRawUnsafe('SELECT table_name AS tableName FROM information_schema.tables WHERE table_schema = DATABASE();');
+        console.log(`Found ${tablesResult.length} tables in database.`);
+        for (const row of tablesResult) {
+            const tableName = row.tableName || row.TABLE_NAME || row.table_name;
+            // Skip Prisma migrations table to keep tracking intact
+            if (tableName && tableName !== '_prisma_migrations') {
+                try {
+                    await prisma.$executeRawUnsafe(`DELETE FROM \`${tableName}\`;`);
+                    console.log(`✅ Cleared table: ${tableName}`);
+                }
+                catch (err) {
+                    console.log(`ℹ️ Table ${tableName} skipped (details: ${err.message})`);
+                }
             }
         }
         // 3. Enable FK checks
         await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1;');
-        console.log('🎉 Database wipe completed successfully!');
+        console.log('🎉 Dynamic database wipe completed successfully!');
     }
     catch (error) {
-        console.error('⚠️ Error: Database wipe failed:', error.message);
+        console.error('⚠️ Error: Dynamic database wipe failed:', error.message);
     }
     finally {
         await prisma.$disconnect();
