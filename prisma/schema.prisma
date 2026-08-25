@@ -182,6 +182,18 @@ model Tenant {
   createdAt         DateTime          @default(now())
   companyId         String?
   imageUrl          String?           @db.Text
+  dob               String?
+  nationality       String?
+  idType            String?
+  idNumber          String?
+  emergencyName     String?
+  emergencyRelationship String?
+  emergencyPhone    String?
+  employer          String?
+  position          String?
+  monthlyIncome     Float?
+  employmentStatus  String?
+  currentAddress    String?
   charges           Charge[]
   deposits          Deposit[]
   insurancePolicies InsurancePolicy[]

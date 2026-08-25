@@ -11,6 +11,8 @@ router.post('/refresh', (req, res, next) => authController.refresh(req, res, nex
 router.post('/change-password', authMiddleware, (req, res, next) => authController.changePassword(req, res, next));
 router.get('/plans', (req, res, next) => authController.getPublicPlans(req, res, next));
 router.post('/create-hosted-payment', (req, res, next) => authController.createHostedPayment(req, res, next));
+router.get('/public-properties', (req, res, next) => authController.getPublicProperties(req, res, next));
+router.post('/tenant-signup', (req, res, next) => authController.tenantSignup(req, res, next));
 
 export default router;
 

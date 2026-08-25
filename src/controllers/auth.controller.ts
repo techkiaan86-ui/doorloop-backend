@@ -3,6 +3,9 @@ import { authService } from '../services/auth.service';
 import { superAdminService } from '../services/superadmin.service';
 import { authorizeNetService } from '../services/authorizeNet.service';
 import { sendSuccess } from '../utils/apiResponse';
+import prisma from '../config/database';
+import { AppError } from '../utils/appError';
+import bcrypt from 'bcrypt';
 
 export class AuthController {
   async login(req: Request, res: Response, next: NextFunction) {
@@ -63,6 +66,138 @@ export class AuthController {
         description: description || `SaaS Subscription Plan: ${planName}`,
       });
       return sendSuccess({ res, data: result, message: 'Hosted payment token generated successfully.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getPublicProperties(req: Request, res: Response, next: NextFunction) {
+    try {
+      const properties = await prisma.property.findMany({
+        select: {
+          id: true,
+          name: true,
+          companyId: true,
+          address: true,
+          imageUrl: true,
+          owner: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+      return sendSuccess({ res, data: properties });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async tenantSignup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const {
+        firstName,
+        lastName,
+        email,
+        phone,
+        password,
+        companyId,
+        property,
+        dob,
+        nationality,
+        idType,
+        idNumber,
+        emergencyName,
+        emergencyRelationship,
+        emergencyPhone,
+        employer,
+        position,
+        monthlyIncome,
+        employmentStatus,
+        currentAddress,
+        budget,
+        moveInDate,
+        notes,
+        priority,
+      } = req.body;
+
+      if (!firstName || !lastName || !email || !phone || !password || !companyId) {
+        throw new AppError('Required parameters are missing (name, email, phone, password, and companyId are required).', 400, 'BAD_REQUEST');
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const existingUser = await tx.user.findUnique({ where: { email } });
+        if (existingUser) {
+          throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        let role = await tx.role.findUnique({ where: { name: 'Tenant' } });
+        if (!role) {
+          role = await tx.role.findFirst() as any;
+        }
+        if (!role) {
+          throw new AppError('Tenant role not found in database.', 500, 'ROLE_NOT_FOUND');
+        }
+
+        const tenant = await tx.tenant.create({
+          data: {
+            firstName,
+            lastName,
+            email,
+            phone,
+            status: 'Pending',
+            companyId,
+            dob: dob || null,
+            nationality: nationality || null,
+            idType: idType || null,
+            idNumber: idNumber || null,
+            emergencyName: emergencyName || null,
+            emergencyRelationship: emergencyRelationship || null,
+            emergencyPhone: emergencyPhone || null,
+            employer: employer || null,
+            position: position || null,
+            monthlyIncome: monthlyIncome ? Number(monthlyIncome) : null,
+            employmentStatus: employmentStatus || null,
+            currentAddress: currentAddress || null,
+          },
+        });
+
+        await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            firstName,
+            lastName,
+            phone: phone || null,
+            roleId: role.id,
+            companyId,
+            status: 'Active',
+          },
+        });
+
+        const resolvedName = [firstName, lastName].filter(Boolean).join(' ') || 'Unnamed Lead';
+        const lead = await tx.crmLead.create({
+          data: {
+            name: resolvedName,
+            email,
+            phone,
+            source: 'Portal',
+            status: 'New',
+            budget: budget ? Number(budget) : null,
+            moveInDate: moveInDate || null,
+            priority: priority || 'Medium',
+            notes: notes || null,
+            property: property || null,
+            companyId,
+          },
+        });
+
+        return { tenant, lead };
+      });
+
+      return sendSuccess({ res, statusCode: 201, data: result, message: 'Tenant signup and application submitted successfully.' });
     } catch (error) {
       next(error);
     }

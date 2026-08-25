@@ -31,7 +31,27 @@ export class TenantController {
 
   async create(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { firstName, lastName, email, phone, unitId, status, password } = req.body;
+      const {
+        firstName,
+        lastName,
+        email,
+        phone,
+        unitId,
+        status,
+        password,
+        dob,
+        nationality,
+        idType,
+        idNumber,
+        emergencyName,
+        emergencyRelationship,
+        emergencyPhone,
+        employer,
+        position,
+        monthlyIncome,
+        employmentStatus,
+        currentAddress,
+      } = req.body;
       const companyId = await getManagerCompanyId(req, req.body.companyId || req.user?.companyId);
       const file = req.file;
 
@@ -72,6 +92,18 @@ export class TenantController {
           status: status || 'Pending',
           imageUrl,
           companyId,
+          dob: dob || null,
+          nationality: nationality || null,
+          idType: idType || null,
+          idNumber: idNumber || null,
+          emergencyName: emergencyName || null,
+          emergencyRelationship: emergencyRelationship || null,
+          emergencyPhone: emergencyPhone || null,
+          employer: employer || null,
+          position: position || null,
+          monthlyIncome: monthlyIncome ? Number(monthlyIncome) : null,
+          employmentStatus: employmentStatus || null,
+          currentAddress: currentAddress || null,
         },
       });
 
@@ -131,7 +163,27 @@ export class TenantController {
 
   async update(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { firstName, lastName, email, phone, unitId, status, password } = req.body;
+      const {
+        firstName,
+        lastName,
+        email,
+        phone,
+        unitId,
+        status,
+        password,
+        dob,
+        nationality,
+        idType,
+        idNumber,
+        emergencyName,
+        emergencyRelationship,
+        emergencyPhone,
+        employer,
+        position,
+        monthlyIncome,
+        employmentStatus,
+        currentAddress,
+      } = req.body;
       const companyId = req.user?.companyId;
       const id = req.params.id as string;
       const file = req.file;
@@ -178,6 +230,18 @@ export class TenantController {
           unitId,
           status,
           imageUrl,
+          dob: dob !== undefined ? dob : undefined,
+          nationality: nationality !== undefined ? nationality : undefined,
+          idType: idType !== undefined ? idType : undefined,
+          idNumber: idNumber !== undefined ? idNumber : undefined,
+          emergencyName: emergencyName !== undefined ? emergencyName : undefined,
+          emergencyRelationship: emergencyRelationship !== undefined ? emergencyRelationship : undefined,
+          emergencyPhone: emergencyPhone !== undefined ? emergencyPhone : undefined,
+          employer: employer !== undefined ? employer : undefined,
+          position: position !== undefined ? position : undefined,
+          monthlyIncome: monthlyIncome !== undefined ? (monthlyIncome ? Number(monthlyIncome) : null) : undefined,
+          employmentStatus: employmentStatus !== undefined ? employmentStatus : undefined,
+          currentAddress: currentAddress !== undefined ? currentAddress : undefined,
         },
       });
 
