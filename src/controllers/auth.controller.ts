@@ -202,6 +202,34 @@ export class AuthController {
       next(error);
     }
   }
+
+  async checkEmailAvailability(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        throw new AppError('Email is required', 400, 'BAD_REQUEST');
+      }
+
+      const emailLower = email.toLowerCase();
+
+      const existingUser = await prisma.user.findFirst({
+        where: { email: emailLower },
+      });
+
+      const existingTenant = await prisma.tenant.findFirst({
+        where: { email: emailLower },
+      });
+
+      const exists = !!(existingUser || existingTenant);
+
+      return sendSuccess({
+        res,
+        data: { exists },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const authController = new AuthController();
