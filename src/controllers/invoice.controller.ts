@@ -2,10 +2,14 @@ import { Response, NextFunction } from 'express';
 import prisma from '../config/database';
 import { sendSuccess } from '../utils/apiResponse';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { generateAutoInvoices } from '../services/billingAutomation.service';
 
 class InvoiceController {
   async getAll(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
+      // Auto-generate rent invoices (catch-up)
+      await generateAutoInvoices();
+
       const companyId = req.user?.companyId;
       const userRole = req.user?.roleName || (req.user as any)?.role;
       const userEmail = req.user?.email;

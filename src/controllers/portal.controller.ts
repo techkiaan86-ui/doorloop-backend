@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import { sendSuccess } from '../utils/apiResponse';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import cloudinary from '../config/cloudinary';
+import { generateAutoInvoices } from '../services/billingAutomation.service';
 
 export class PortalController {
   // --- Helper to get tenant for logged in user ---
@@ -123,23 +124,41 @@ export class PortalController {
         });
       }
 
-      const activeLease = tenant.leases && tenant.leases.length > 0 ? tenant.leases[0] : null;
-      const rent = activeLease?.rentAmount || 0;
+      // Automatically run auto-billing catch-up first so the tenant's metrics reflect auto invoices!
+      await generateAutoInvoices();
 
+      const activeLease = tenant.leases && tenant.leases.length > 0 ? tenant.leases[0] : null;
+      const leaseExpiration = activeLease?.endDate 
+        ? new Date(activeLease.endDate).toISOString().split('T')[0] 
+        : 'N/A';
+
+      // Find all unpaid invoices
       const unpaidInvoices = await prisma.invoice.findMany({
-        where: { tenantId: tenant.id, status: { in: ['Sent', 'Overdue', 'Partially Paid'] } },
+        where: { 
+          tenantId: tenant.id, 
+          status: { not: 'Paid' } 
+        },
+        orderBy: {
+          dueDate: 'asc'
+        }
       });
-      const balance = unpaidInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+
+      const outstandingBalance = unpaidInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+      
+      // The oldest unpaid invoice is the next one due
+      const oldestUnpaid = unpaidInvoices[0];
+      const currentRent = oldestUnpaid ? oldestUnpaid.balance : 0;
+      const nextDueDate = oldestUnpaid ? oldestUnpaid.dueDate : 'N/A';
 
       return sendSuccess({
         res,
         data: {
-          currentRent: rent,
-          nextDueDate: activeLease?.endDate ? new Date(activeLease.endDate).toISOString().split('T')[0] : 'N/A',
-          outstandingBalance: balance,
+          currentRent,
+          nextDueDate,
+          outstandingBalance,
           activeVisitors: 0,
           packagesWaiting: 0,
-          leaseExpiration: activeLease?.endDate ? new Date(activeLease.endDate).toISOString().split('T')[0] : 'N/A',
+          leaseExpiration,
         },
       });
     } catch (error) {
