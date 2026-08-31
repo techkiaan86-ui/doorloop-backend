@@ -1,55 +1,123 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🧹 Clearing all data except admin@apexpm.com...');
+  console.log('🧹 Starting database clear...');
 
   // 1. Disable FK checks
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
 
-  // 2. Delete all transaction/operational data
-  await prisma.inspectionPhoto.deleteMany({});
-  await prisma.inspectionItem.deleteMany({});
-  await prisma.inspectionRoom.deleteMany({});
-  await prisma.inspection.deleteMany({});
-  await prisma.moveIn.deleteMany({});
-  await prisma.inspectionTemplateItem.deleteMany({});
-  await prisma.inspectionTemplateRoom.deleteMany({});
-  await prisma.inspectionTemplate.deleteMany({});
-  await prisma.rentPayment.deleteMany({});
-  await prisma.lease.deleteMany({});
-  await prisma.unit.deleteMany({});
-  await prisma.building.deleteMany({});
-  await prisma.property.deleteMany({});
-  await prisma.owner.deleteMany({});
-  await prisma.serviceRequest.deleteMany({});
-  await prisma.workOrder.deleteMany({});
-  await prisma.screeningReport.deleteMany({});
-  await prisma.violation.deleteMany({});
-  await prisma.invoice.deleteMany({});
-  await prisma.coAAccount.deleteMany({});
-  await prisma.bankAccount.deleteMany({});
-  await prisma.vendor.deleteMany({});
-  await prisma.application.deleteMany({});
-  await prisma.companyUser.deleteMany({});
+  // 2. Fetch all tables from the database
+  const tables: { TABLE_NAME: string }[] = await prisma.$queryRawUnsafe(
+    `SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'`
+  );
 
-  // 3. Delete all users EXCEPT admin@apexpm.com
-  await prisma.user.deleteMany({
-    where: {
-      email: { not: 'admin@apexpm.com' }
-    }
-  });
+  // 3. Delete from all tables except migration history
+  for (const table of tables) {
+    const tableName = table.TABLE_NAME;
+    if (tableName === '_prisma_migrations') continue;
+    console.log(`Clearing table: ${tableName}`);
+    await prisma.$executeRawUnsafe(`DELETE FROM \`${tableName}\`;`);
+  }
 
   // 4. Enable FK checks
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1;');
+  console.log('✅ Database cleared.');
 
-  console.log('✅ Database successfully cleared! Only admin@apexpm.com user remains.');
+  // 5. Create/Ensure default Roles exist
+  const adminRole = await prisma.role.upsert({
+    where: { name: 'Super Admin' },
+    update: {},
+    create: {
+      name: 'Super Admin',
+      description: 'Master account with full administrative permissions.',
+      isCustom: false,
+    },
+  });
+
+  const roles = [
+    { name: 'Property Manager', description: 'Property manager access with operational permissions.', isCustom: false },
+    { name: 'Owner', description: 'Owner access to financial statements and payouts.', isCustom: false },
+    { name: 'Tenant', description: 'Tenant portal access for rent payments and maintenance.', isCustom: false },
+    { name: 'Maintenance Staff', description: 'Maintenance dispatcher and tech access.', isCustom: false },
+    { name: 'Collection Manager', description: 'Collection manager access.', isCustom: false },
+  ];
+
+  for (const r of roles) {
+    await prisma.role.upsert({
+      where: { name: r.name },
+      update: {},
+      create: r,
+    });
+  }
+
+  // 6. Create default permissions for Super Admin
+  const modules = [
+    'Dashboard',
+    'Properties',
+    'Leasing',
+    'Tenants',
+    'Owners',
+    'Rent & Payments',
+    'Accounting',
+    'Maintenance',
+    'Documents',
+    'Reports',
+    'Communication',
+    'Company Settings',
+  ];
+
+  for (const moduleName of modules) {
+    await prisma.permission.upsert({
+      where: {
+        roleId_module: {
+          roleId: adminRole.id,
+          module: moduleName,
+        },
+      },
+      update: {},
+      create: {
+        roleId: adminRole.id,
+        module: moduleName,
+        canView: true,
+        canCreate: true,
+        canEdit: true,
+        canDelete: true,
+        canApprove: true,
+        canExport: true,
+      },
+    });
+  }
+
+  // 7. Hash password and create/update Super Admin User
+  const passwordHash = await bcrypt.hash('whatslandlord@123', 12);
+  await prisma.user.upsert({
+    where: { email: 'superadmin@whatslandlord.com' },
+    update: {
+      passwordHash,
+      firstName: 'Super',
+      lastName: 'Admin',
+      roleId: adminRole.id,
+      status: 'Active',
+    },
+    create: {
+      email: 'superadmin@whatslandlord.com',
+      passwordHash,
+      firstName: 'Super',
+      lastName: 'Admin',
+      roleId: adminRole.id,
+      status: 'Active',
+    },
+  });
+
+  console.log('🚀 Super Admin created successfully!');
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Failed:', e);
     process.exit(1);
   })
   .finally(async () => {

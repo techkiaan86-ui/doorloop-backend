@@ -11,7 +11,7 @@ exports.createTenantSchema = zod_1.z.object({
         phone: zod_1.z.string({ required_error: 'Phone number is required' }).trim().min(1, 'Phone number is required').max(30),
         unitId: zod_1.z.string().uuid('Invalid Unit ID format').optional().nullable(),
         status: tenantStatusEnum.default('Pending'),
-        password: zod_1.z.string().min(6, 'Password must be at least 6 characters').optional().nullable().or(zod_1.z.literal('')),
+        password: zod_1.z.string({ required_error: 'Password is required' }).min(6, 'Password must be at least 6 characters'),
     }),
 });
 exports.updateTenantSchema = zod_1.z.object({

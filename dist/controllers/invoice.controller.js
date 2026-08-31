@@ -6,9 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.invoiceController = void 0;
 const database_1 = __importDefault(require("../config/database"));
 const apiResponse_1 = require("../utils/apiResponse");
+const billingAutomation_service_1 = require("../services/billingAutomation.service");
 class InvoiceController {
     async getAll(req, res, next) {
         try {
+            // Auto-generate rent invoices (catch-up)
+            await (0, billingAutomation_service_1.generateAutoInvoices)();
             const companyId = req.user?.companyId;
             const userRole = req.user?.roleName || req.user?.role;
             const userEmail = req.user?.email;
@@ -26,6 +29,9 @@ class InvoiceController {
             }
             let invoices = await database_1.default.invoice.findMany({
                 where: whereClause,
+                include: {
+                    tenant: true,
+                },
                 orderBy: { createdAt: 'desc' },
             });
             const formatted = invoices.map((inv) => ({

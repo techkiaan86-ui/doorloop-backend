@@ -1171,9 +1171,13 @@ enum PaymentStatus {
 enum PaymentMethod {
   ACH
   CreditCard
+  DebitCard
   BankTransfer
+  WireTransfer
   Cash
   Check
+  MoneyOrder
+  Zelle
 }
 
 enum Priority {

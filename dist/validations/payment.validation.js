@@ -6,9 +6,13 @@ const validationHelpers_1 = require("./validationHelpers");
 const paymentMethodEnum = zod_1.z.enum([
     'ACH',
     'CreditCard',
+    'DebitCard',
     'BankTransfer',
+    'WireTransfer',
     'Cash',
     'Check',
+    'MoneyOrder',
+    'Zelle',
 ]);
 exports.createPaymentSchema = zod_1.z.object({
     body: zod_1.z.object({

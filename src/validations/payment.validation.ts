@@ -4,9 +4,13 @@ import { safeNumberSchema, safeDateSchema } from './validationHelpers';
 const paymentMethodEnum = z.enum([
   'ACH',
   'CreditCard',
+  'DebitCard',
   'BankTransfer',
+  'WireTransfer',
   'Cash',
   'Check',
+  'MoneyOrder',
+  'Zelle',
 ]);
 
 export const createPaymentSchema = z.object({

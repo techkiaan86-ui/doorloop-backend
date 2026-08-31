@@ -156,6 +156,12 @@ class PaymentService {
                     referenceNumber: refNum,
                     companyId: data.companyId || tenant?.companyId || property?.companyId,
                 },
+                include: {
+                    tenant: true,
+                    property: true,
+                    unit: true,
+                    company: true,
+                }
             });
             const unpaidInvoices = await tx.invoice.findMany({
                 where: { tenantId, status: { in: ['Sent', 'Overdue', 'Partially Paid', 'Unpaid', 'Draft'] } },

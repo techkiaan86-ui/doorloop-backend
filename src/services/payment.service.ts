@@ -162,6 +162,12 @@ export class PaymentService {
           referenceNumber: refNum,
           companyId: data.companyId || tenant?.companyId || property?.companyId,
         },
+        include: {
+          tenant: true,
+          property: true,
+          unit: true,
+          company: true,
+        }
       });
 
 

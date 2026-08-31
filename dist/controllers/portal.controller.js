@@ -7,6 +7,7 @@ exports.portalController = exports.PortalController = void 0;
 const database_1 = __importDefault(require("../config/database"));
 const apiResponse_1 = require("../utils/apiResponse");
 const cloudinary_1 = __importDefault(require("../config/cloudinary"));
+const billingAutomation_service_1 = require("../services/billingAutomation.service");
 class PortalController {
     // --- Helper to get tenant for logged in user ---
     async getTenantForUser(req) {
@@ -119,21 +120,36 @@ class PortalController {
                     },
                 });
             }
+            // Automatically run auto-billing catch-up first so the tenant's metrics reflect auto invoices!
+            await (0, billingAutomation_service_1.generateAutoInvoices)();
             const activeLease = tenant.leases && tenant.leases.length > 0 ? tenant.leases[0] : null;
-            const rent = activeLease?.rentAmount || 0;
+            const leaseExpiration = activeLease?.endDate
+                ? new Date(activeLease.endDate).toISOString().split('T')[0]
+                : 'N/A';
+            // Find all unpaid invoices
             const unpaidInvoices = await database_1.default.invoice.findMany({
-                where: { tenantId: tenant.id, status: { in: ['Sent', 'Overdue', 'Partially Paid'] } },
+                where: {
+                    tenantId: tenant.id,
+                    status: { not: 'Paid' }
+                },
+                orderBy: {
+                    dueDate: 'asc'
+                }
             });
-            const balance = unpaidInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+            const outstandingBalance = unpaidInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
+            // The oldest unpaid invoice is the next one due
+            const oldestUnpaid = unpaidInvoices[0];
+            const currentRent = oldestUnpaid ? oldestUnpaid.balance : 0;
+            const nextDueDate = oldestUnpaid ? oldestUnpaid.dueDate : 'N/A';
             return (0, apiResponse_1.sendSuccess)({
                 res,
                 data: {
-                    currentRent: rent,
-                    nextDueDate: activeLease?.endDate ? new Date(activeLease.endDate).toISOString().split('T')[0] : 'N/A',
-                    outstandingBalance: balance,
+                    currentRent,
+                    nextDueDate,
+                    outstandingBalance,
                     activeVisitors: 0,
                     packagesWaiting: 0,
-                    leaseExpiration: activeLease?.endDate ? new Date(activeLease.endDate).toISOString().split('T')[0] : 'N/A',
+                    leaseExpiration,
                 },
             });
         }

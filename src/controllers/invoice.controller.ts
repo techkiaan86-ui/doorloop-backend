@@ -29,6 +29,9 @@ class InvoiceController {
 
       let invoices = await prisma.invoice.findMany({
         where: whereClause,
+        include: {
+          tenant: true,
+        },
         orderBy: { createdAt: 'desc' },
       });
 
