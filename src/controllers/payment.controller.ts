@@ -55,6 +55,39 @@ export class PaymentController {
       next(error);
     }
   }
+
+  async getById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const id = req.params.id as string;
+      const payment = await paymentService.getPaymentById(id, companyId);
+      return sendSuccess({ res, data: payment });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updatePayment(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const id = req.params.id as string;
+      const updatedPayment = await paymentService.updatePayment(id, req.body, companyId);
+      return sendSuccess({ res, data: updatedPayment });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deletePayment(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const id = req.params.id as string;
+      const result = await paymentService.deletePayment(id, companyId);
+      return sendSuccess({ res, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const paymentController = new PaymentController();

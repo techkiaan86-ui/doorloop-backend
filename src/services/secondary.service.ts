@@ -59,9 +59,13 @@ export class SecondaryService {
   }
 
   // Notifications
-  async getNotifications(companyId?: string) {
+  async getNotifications(companyId?: string, role?: string) {
+    const whereClause: any = companyId ? { companyId } : {};
+    if (role) {
+      whereClause.role = role;
+    }
     return prisma.notification.findMany({
-      where: companyId ? { companyId } : {},
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -70,6 +74,27 @@ export class SecondaryService {
     return prisma.notification.update({
       where: { id },
       data: { read: true },
+    });
+  }
+
+  async markAllNotificationsRead(companyId?: string, role?: string) {
+    const whereClause: any = companyId ? { companyId } : {};
+    if (role) {
+      whereClause.role = role;
+    }
+    return prisma.notification.updateMany({
+      where: whereClause,
+      data: { read: true },
+    });
+  }
+
+  async clearNotifications(companyId?: string, role?: string) {
+    const whereClause: any = companyId ? { companyId } : {};
+    if (role) {
+      whereClause.role = role;
+    }
+    return prisma.notification.deleteMany({
+      where: whereClause,
     });
   }
 

@@ -161,6 +161,20 @@ export class SuperAdminService {
     const passwordHash = await bcrypt.hash(data.password || 'admin123', 12);
     const propertyManagerRole = await prisma.role.findFirst({ where: { name: 'Property Manager' } });
 
+    try {
+      await prisma.notification.create({
+        data: {
+          title: 'New Company Registered',
+          message: `${company.name} registered on the platform (${planName}).`,
+          type: 'success',
+          role: 'Super Admin',
+          targetId: company.id,
+        },
+      });
+    } catch (notifErr) {
+      console.warn('Could not create superadmin notification:', notifErr);
+    }
+
     const nameParts = data.contactName.trim().split(/\s+/);
     const firstName = nameParts[0] || 'Admin';
     const lastName = nameParts.slice(1).join(' ') || 'User';

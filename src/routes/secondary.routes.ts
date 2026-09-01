@@ -17,7 +17,9 @@ router.post('/promotions', (req, res, next) => secondaryController.createPromoti
 
 // Notifications
 router.get('/notifications', (req, res, next) => secondaryController.getNotifications(req, res, next));
+router.put('/notifications/read-all', (req, res, next) => secondaryController.markAllNotificationsRead(req, res, next));
 router.put('/notifications/:id/read', (req, res, next) => secondaryController.markNotificationRead(req, res, next));
+router.delete('/notifications', (req, res, next) => secondaryController.clearNotifications(req, res, next));
 
 // Documents
 router.get('/documents', (req, res, next) => secondaryController.getDocuments(req, res, next));

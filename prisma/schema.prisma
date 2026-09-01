@@ -434,10 +434,13 @@ model Promotion {
 model Notification {
   id        String   @id @default(uuid())
   userId    String?
+  role      String   @default("Property Manager")
   title     String
   message   String   @db.Text
   type      String   @default("info")
   read      Boolean  @default(false)
+  targetId  String?
+  targetUrl String?
   createdAt DateTime @default(now())
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])

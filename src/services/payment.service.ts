@@ -170,6 +170,32 @@ export class PaymentService {
         }
       });
 
+      // Create real notifications for Property Manager and Tenant
+      const tenantNameStr = tenant ? `${tenant.firstName} ${tenant.lastName}` : 'Resident';
+      const unitNumStr = unit ? unit.unitNumber : '';
+
+      await tx.notification.create({
+        data: {
+          title: 'Payment Received',
+          message: `Payment of $${payment.amount.toLocaleString()} received from ${tenantNameStr}`,
+          type: 'success',
+          role: 'Property Manager',
+          companyId: payment.companyId,
+          targetId: payment.id,
+        },
+      });
+
+      await tx.notification.create({
+        data: {
+          title: 'Payment Receipt Confirmed',
+          message: `Your payment of $${payment.amount.toLocaleString()} ${unitNumStr ? `for Unit ${unitNumStr}` : ''} has been processed.`,
+          type: 'success',
+          role: 'Tenant',
+          companyId: payment.companyId,
+          targetId: payment.id,
+        },
+      });
+
 
 
       const unpaidInvoices = await tx.invoice.findMany({
@@ -231,6 +257,160 @@ export class PaymentService {
       }
 
       return payment;
+    });
+  }
+
+  async getPaymentById(id: string, companyId?: string) {
+    const whereClause: any = { id };
+    if (companyId) whereClause.companyId = companyId;
+
+    const payment = await prisma.rentPayment.findFirst({
+      where: whereClause,
+      include: {
+        tenant: true,
+        property: true,
+        unit: true,
+        lease: true,
+      },
+    });
+
+    if (!payment) {
+      throw new AppError('Payment record not found.', 404, 'NOT_FOUND');
+    }
+
+    return payment;
+  }
+
+  async updatePayment(id: string, data: any, companyId?: string) {
+    const whereClause: any = { id };
+    if (companyId) whereClause.companyId = companyId;
+
+    const existingPayment = await prisma.rentPayment.findFirst({
+      where: whereClause,
+    });
+
+    if (!existingPayment) {
+      throw new AppError('Payment record not found.', 404, 'NOT_FOUND');
+    }
+
+    const updateData: any = {};
+    if (data.amount !== undefined) updateData.amount = Number(data.amount);
+    if (data.paidDate !== undefined) updateData.paidDate = new Date(data.paidDate);
+    if (data.dueDate !== undefined) updateData.dueDate = new Date(data.dueDate);
+    if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
+    if (data.referenceNumber !== undefined) updateData.referenceNumber = data.referenceNumber;
+    if (data.status !== undefined) updateData.status = data.status;
+
+    return prisma.$transaction(async (tx) => {
+      if (data.amount !== undefined && Number(data.amount) !== existingPayment.amount) {
+        const diff = Number(data.amount) - existingPayment.amount;
+
+        const checkingAccount = await tx.coAAccount.findFirst({
+          where: companyId
+            ? { companyId, OR: [{ accountCode: '1010' }, { type: 'Asset' }] }
+            : { OR: [{ accountCode: '1010' }, { type: 'Asset' }] },
+        });
+        if (checkingAccount) {
+          await tx.coAAccount.update({
+            where: { id: checkingAccount.id },
+            data: { balance: { increment: diff } },
+          });
+        }
+
+        const incomeAccount = await tx.coAAccount.findFirst({
+          where: companyId
+            ? { companyId, OR: [{ accountCode: '4010' }, { type: 'Revenue' }] }
+            : { OR: [{ accountCode: '4010' }, { type: 'Revenue' }] },
+        });
+        if (incomeAccount) {
+          await tx.coAAccount.update({
+            where: { id: incomeAccount.id },
+            data: { balance: { increment: diff } },
+          });
+        }
+      }
+
+      return tx.rentPayment.update({
+        where: { id },
+        data: updateData,
+        include: {
+          tenant: true,
+          property: true,
+          unit: true,
+          lease: true,
+        },
+      });
+    });
+  }
+
+  async deletePayment(id: string, companyId?: string) {
+    const whereClause: any = { id };
+    if (companyId) whereClause.companyId = companyId;
+
+    const payment = await prisma.rentPayment.findFirst({
+      where: whereClause,
+    });
+
+    if (!payment) {
+      throw new AppError('Payment record not found.', 404, 'NOT_FOUND');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const tenantInvoices = await tx.invoice.findMany({
+        where: { tenantId: payment.tenantId },
+        orderBy: { dueDate: 'desc' },
+      });
+
+      let amountToRevert = payment.amount;
+      for (const invoice of tenantInvoices) {
+        if (amountToRevert <= 0) break;
+        if (invoice.paidAmount > 0) {
+          const revertFromInvoice = Math.min(amountToRevert, invoice.paidAmount);
+          const newPaidAmount = invoice.paidAmount - revertFromInvoice;
+          const newBalance = invoice.balance + revertFromInvoice;
+          const newStatus = newPaidAmount === 0 ? 'Unpaid' : 'Partially Paid';
+
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: {
+              paidAmount: newPaidAmount,
+              balance: newBalance,
+              status: newStatus,
+            },
+          });
+          amountToRevert -= revertFromInvoice;
+        }
+      }
+
+      const checkingAccount = await tx.coAAccount.findFirst({
+        where: companyId
+          ? { companyId, OR: [{ accountCode: '1010' }, { type: 'Asset' }] }
+          : { OR: [{ accountCode: '1010' }, { type: 'Asset' }] },
+      });
+      if (checkingAccount) {
+        await tx.coAAccount.update({
+          where: { id: checkingAccount.id },
+          data: { balance: { decrement: payment.amount } },
+        });
+      }
+
+      const incomeAccount = await tx.coAAccount.findFirst({
+        where: companyId
+          ? { companyId, OR: [{ accountCode: '4010' }, { type: 'Revenue' }] }
+          : { OR: [{ accountCode: '4010' }, { type: 'Revenue' }] },
+      });
+      if (incomeAccount) {
+        await tx.coAAccount.update({
+          where: { id: incomeAccount.id },
+          data: { balance: { decrement: payment.amount } },
+        });
+      }
+
+      await tx.rentPayment.delete({
+        where: { id: payment.id },
+      });
+
+      return { message: 'Payment deleted successfully.' };
     });
   }
 }
