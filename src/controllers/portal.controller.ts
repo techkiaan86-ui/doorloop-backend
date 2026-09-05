@@ -1281,6 +1281,24 @@ export class PortalController {
     }
   }
 
+  async syncNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { bin } = req.query;
+      const { nycDobService } = await import('../services/nycDob.service');
+      const results = await nycDobService.fetchViolationsByBin((bin as string) || '1000000');
+      return sendSuccess({ 
+        res, 
+        data: { 
+          syncedCount: results.length,
+          violations: results 
+        },
+        message: 'NYC DOB Violations synced successfully via NYC Open Data API' 
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getTenantMessages(req: Request, res: Response, next: NextFunction) {
     try {
       let messages = await prisma.tenantMessage.findMany({
