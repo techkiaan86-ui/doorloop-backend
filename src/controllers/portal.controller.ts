@@ -1407,15 +1407,48 @@ export class PortalController {
   async dispatchViolation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { violationId } = req.body;
+      const companyId = req.user?.companyId;
+
       if (violationId) {
+        // 1. Update violation status to Resolved in DB
         await prisma.violation.updateMany({
           where: { id: violationId },
           data: { status: 'Resolved' },
         });
+
+        // 2. Fetch violation details to create a real WorkOrder in DB
+        const violation = await prisma.violation.findFirst({
+          where: { id: violationId },
+          include: { unit: true },
+        });
+
+        if (violation) {
+          let targetPropertyId: string | undefined = violation.unit?.propertyId;
+          if (!targetPropertyId) {
+            const firstProp = await prisma.property.findFirst({
+              where: companyId ? { companyId } : {},
+            });
+            targetPropertyId = firstProp?.id;
+          }
+
+          if (targetPropertyId) {
+            await prisma.workOrder.create({
+              data: {
+                propertyId: targetPropertyId,
+                title: `NYC DOB Violation: ${violation.title}`,
+                description: violation.description || 'DOB Building Compliance Citation',
+                priority: 'Emergency',
+                status: 'Assigned',
+                estimatedCost: violation.fineAmount || 250,
+                companyId: companyId || violation.companyId || undefined,
+              },
+            });
+          }
+        }
       }
       return sendSuccess({
         res,
-        message: 'Violation dispatched and marked settled in DB successfully',
+        message: 'Violation dispatched and converted to Work Order in DB successfully',
       });
     } catch (error) {
       next(error);
