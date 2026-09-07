@@ -9,10 +9,13 @@ export class DashboardController {
       const companyId = req.user?.companyId;
 
       const totalProperties = await prisma.property.count({
-        where: companyId ? { companyId } : {},
+        where: {
+          ...(companyId ? { companyId } : {}),
+          status: { notIn: ['Inactive', 'Draft'] },
+        },
       });
       const totalUnits = await prisma.unit.count({
-        where: companyId ? { property: { companyId } } : {},
+        where: companyId ? { property: { companyId, status: { notIn: ['Inactive', 'Draft'] } } } : {},
       });
       
       const occupiedUnits = await prisma.unit.count({

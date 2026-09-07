@@ -968,6 +968,19 @@ export class PortalController {
       const totalProperties = properties.length;
       const totalUnits = properties.reduce((sum, p) => sum + (p.unitsCount || p.units?.length || 1), 0);
 
+      const activeUnitsCount = properties.reduce((sum, p) => {
+        const rawUnits = p.units || [];
+        return sum + rawUnits.filter((u: any) => u.status === 'Occupied').length;
+      }, 0);
+      const computedOccupancy = totalUnits > 0 ? Math.round((activeUnitsCount / totalUnits) * 100) : 0;
+
+      const pendingWorkOrders = await prisma.workOrder.count({
+        where: {
+          propertyId: { in: propertyIds },
+          status: { in: ['Open', 'InProgress'] },
+        },
+      });
+
       return sendSuccess({
         res,
         data: {
@@ -976,10 +989,10 @@ export class PortalController {
           netDistribution,
           netIncome: netDistribution,
           totalProperties,
-          occupancyRate: 95.0,
+          occupancyRate: computedOccupancy,
           totalUnits,
-          activeLeases: totalUnits,
-          pendingMaintenance: 0,
+          activeLeases: activeUnitsCount,
+          pendingMaintenance: pendingWorkOrders,
         },
       });
     } catch (error) {
