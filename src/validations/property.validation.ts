@@ -16,6 +16,7 @@ const propertyStatusEnum = z.enum([
   'Inactive',
   'Under Review',
   'Archived',
+  'Draft',
 ]);
 
 export const createPropertySchema = z.object({
