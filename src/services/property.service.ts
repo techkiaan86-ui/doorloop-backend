@@ -5,7 +5,7 @@ import { getManagerCompanyId } from '../utils/companyHelper';
 
 export class PropertyService {
   async getAllProperties(companyId?: string, user?: any) {
-    let whereClause: any = companyId ? { companyId } : {};
+    let whereClause: any = companyId ? { companyId, status: { not: 'Inactive' } } : { status: { not: 'Inactive' } };
 
     if ((user?.roleName === 'Owner' || user?.role === 'Owner') && user?.email) {
       const owner = await prisma.owner.findFirst({
@@ -137,8 +137,9 @@ export class PropertyService {
       });
       if (!prop) throw new AppError('Property not found.', 404, 'NOT_FOUND');
     }
-    return prisma.property.delete({
+    return prisma.property.update({
       where: { id },
+      data: { status: 'Inactive' },
     });
   }
 
