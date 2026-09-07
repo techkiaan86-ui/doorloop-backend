@@ -1283,9 +1283,46 @@ export class PortalController {
 
   async syncNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { bin } = req.query;
+      const bin = (req.query.bin as string) || (req.body?.bin as string) || '1000000';
+      const companyId = req.user?.companyId;
       const { nycDobService } = await import('../services/nycDob.service');
-      const results = await nycDobService.fetchViolationsByBin((bin as string) || '1000000');
+      const results = await nycDobService.fetchViolationsByBin(bin);
+
+      // Persist to DB scoped to current Manager's Company (Multi-Tenant Isolation)
+      if (companyId && results.length > 0) {
+        try {
+          const defaultUnit = await prisma.unit.findFirst({
+            where: { property: { companyId } },
+          });
+
+          if (defaultUnit) {
+            for (const item of results.slice(0, 50)) {
+              const existing = await prisma.violation.findFirst({
+                where: {
+                  companyId,
+                  title: item.violationNumber,
+                },
+              });
+
+              if (!existing) {
+                await prisma.violation.create({
+                  data: {
+                    companyId,
+                    unitId: defaultUnit.id,
+                    title: item.violationNumber,
+                    description: item.description,
+                    fineAmount: item.severity === 'Critical' ? 500 : 250,
+                    status: item.status,
+                  },
+                });
+              }
+            }
+          }
+        } catch (dbErr) {
+          console.error('Error persisting violations to DB:', dbErr);
+        }
+      }
+
       return sendSuccess({ 
         res, 
         data: { 
