@@ -1284,38 +1284,105 @@ export class PortalController {
   async syncNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const bin = (req.query.bin as string) || (req.body?.bin as string) || '1000000';
-      const companyId = req.user?.companyId;
+      let companyId = req.user?.companyId;
+
+      if (!companyId) {
+        const firstCompany = await prisma.company.findFirst();
+        companyId = firstCompany?.id;
+      }
+
       const { nycDobService } = await import('../services/nycDob.service');
       const results = await nycDobService.fetchViolationsByBin(bin);
 
-      // Persist to DB scoped to current Manager's Company (Multi-Tenant Isolation)
-      if (companyId && results.length > 0) {
+      // Persist to DB (Auto-create Property/Unit if not exist)
+      if (results.length > 0) {
         try {
-          const defaultUnit = await prisma.unit.findFirst({
-            where: { property: { companyId } },
+          let targetUnit = await prisma.unit.findFirst({
+            where: companyId ? { property: { companyId } } : {},
           });
 
-          if (defaultUnit) {
-            for (const item of results.slice(0, 50)) {
-              const existing = await prisma.violation.findFirst({
-                where: {
+          if (!targetUnit) {
+            targetUnit = await prisma.unit.findFirst();
+          }
+
+          if (!targetUnit) {
+            let owner = await prisma.owner.findFirst({
+              where: companyId ? { companyId } : {},
+            });
+            if (!owner) {
+              owner = await prisma.owner.create({
+                data: {
+                  name: 'NYC Asset Management',
+                  email: `owner-${Date.now()}@nycproperties.com`,
+                  phone: '212-555-0199',
                   companyId,
-                  title: item.violationNumber,
                 },
               });
+            }
 
-              if (!existing) {
-                await prisma.violation.create({
-                  data: {
-                    companyId,
-                    unitId: defaultUnit.id,
-                    title: item.violationNumber,
-                    description: item.description,
-                    fineAmount: item.severity === 'Critical' ? 500 : 250,
-                    status: item.status,
-                  },
-                });
-              }
+            const property = await prisma.property.create({
+              data: {
+                name: `NYC Building Asset (BIN ${bin})`,
+                type: 'Commercial',
+                ownerId: owner.id,
+                address: `${bin} Sanford Ave, Flushing, NY 11355`,
+                streetAddress: `${bin} Sanford Ave`,
+                city: 'New York',
+                state: 'NY',
+                country: 'USA',
+                zip: '11355',
+                yearBuilt: 1990,
+                squareFootage: 25000,
+                purchasePrice: 5000000,
+                currentValue: 7500000,
+                companyId,
+              },
+            });
+
+            const building = await prisma.building.create({
+              data: {
+                propertyId: property.id,
+                name: 'Main Tower',
+                floors: 6,
+              },
+            });
+
+            targetUnit = await prisma.unit.create({
+              data: {
+                propertyId: property.id,
+                buildingId: building.id,
+                unitNumber: 'Building Wide',
+                floor: 1,
+                bedrooms: 0,
+                bathrooms: 1,
+                squareFootage: 2500,
+                rentAmount: 0,
+                securityDeposit: 0,
+                availabilityDate: new Date(),
+                status: 'Occupied',
+              },
+            });
+          }
+
+          // Persist violations into DB
+          for (const item of results.slice(0, 100)) {
+            const existing = await prisma.violation.findFirst({
+              where: {
+                title: item.violationNumber,
+              },
+            });
+
+            if (!existing) {
+              await prisma.violation.create({
+                data: {
+                  companyId,
+                  unitId: targetUnit.id,
+                  title: item.violationNumber,
+                  description: item.description,
+                  fineAmount: item.severity === 'Critical' ? 500 : 250,
+                  status: item.status,
+                },
+              });
             }
           }
         } catch (dbErr) {
