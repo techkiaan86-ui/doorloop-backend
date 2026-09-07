@@ -1364,10 +1364,11 @@ export class PortalController {
             });
           }
 
-          // Persist violations into DB
+          // Persist violations into DB (Company-scoped Deduplication)
           for (const item of results.slice(0, 100)) {
             const existing = await prisma.violation.findFirst({
               where: {
+                companyId,
                 title: item.violationNumber,
               },
             });
@@ -1397,6 +1398,24 @@ export class PortalController {
           violations: results 
         },
         message: 'NYC DOB Violations synced successfully via NYC Open Data API' 
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async dispatchViolation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { violationId } = req.body;
+      if (violationId) {
+        await prisma.violation.updateMany({
+          where: { id: violationId },
+          data: { status: 'Resolved' },
+        });
+      }
+      return sendSuccess({
+        res,
+        message: 'Violation dispatched and marked settled in DB successfully',
       });
     } catch (error) {
       next(error);
