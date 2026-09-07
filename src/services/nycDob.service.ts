@@ -11,7 +11,7 @@ export interface NycDobViolationResult {
 }
 
 export class NycDobService {
-  private baseUrl = 'https://data.cityofnewyork.us/resource/3h2n-b548.json';
+  private baseUrl = 'https://data.cityofnewyork.us/resource/3h2n-5cm9.json';
 
   /**
    * Fetch violations from NYC Open Data Socrata API by BIN or Address
@@ -24,9 +24,10 @@ export class NycDobService {
         headers['X-App-Token'] = appToken;
       }
 
+      const cleanBin = bin ? bin.trim() : '1000000';
       const params = new URLSearchParams({
-        bin: bin,
-        $limit: '50',
+        bin: cleanBin,
+        $limit: '1000',
         $order: 'issue_date DESC',
       });
 
@@ -36,6 +37,7 @@ export class NycDobService {
       });
 
       if (!response.ok) {
+        console.error(`NYC DOB API HTTP Error ${response.status}: ${response.statusText}`);
         return [];
       }
 
@@ -44,17 +46,32 @@ export class NycDobService {
         return [];
       }
 
-      return data.map((item: any) => ({
-        violationNumber: item.violation_number || item.is_number || 'DOB-UNK',
-        issueDate: item.issue_date || new Date().toISOString().split('T')[0],
-        violationTypeCode: item.violation_type_code || item.violation_category || 'DOB Code',
-        description: item.description || item.disposition_comments || 'NYC DOB Building Code Violation Notice',
-        dispositionComments: item.disposition_comments,
-        deviceNumber: item.device_number,
-        ecbNumber: item.ecb_number,
-        status: item.violation_status === 'FILE' || item.disposition_date ? 'Open' : 'Resolved',
-        severity: item.violation_type_code?.includes('V*') || item.ecb_number ? 'Critical' : 'Warning',
-      }));
+      return data.map((item: any) => {
+        // Parse issue date (Format: YYYYMMDD or ISO)
+        let formattedDate = new Date().toISOString().split('T')[0];
+        if (item.issue_date && typeof item.issue_date === 'string') {
+          if (item.issue_date.length === 8 && /^\d{8}$/.test(item.issue_date)) {
+            formattedDate = `${item.issue_date.substring(0, 4)}-${item.issue_date.substring(4, 6)}-${item.issue_date.substring(6, 8)}`;
+          } else {
+            formattedDate = item.issue_date.split('T')[0];
+          }
+        }
+
+        const category = (item.violation_category || '').toUpperCase();
+        const isOpen = category.includes('ACTIVE') || item.violation_status === 'ACTIVE' || (!item.disposition_date && !category.includes('DISMISSED'));
+
+        return {
+          violationNumber: item.number || item.violation_number || item.isn_dob_bis_viol || 'DOB-UNK',
+          issueDate: formattedDate,
+          violationTypeCode: item.violation_type_code || item.violation_type || 'DOB Code',
+          description: item.description || item.disposition_comments || 'NYC DOB Building Code Violation Notice',
+          dispositionComments: item.disposition_comments,
+          deviceNumber: item.device_number,
+          ecbNumber: item.ecb_number,
+          status: isOpen ? 'Open' : 'Resolved',
+          severity: (item.violation_type_code?.includes('V*') || item.ecb_number || category.includes('ACTIVE')) ? 'Critical' : 'Warning',
+        };
+      });
     } catch (error) {
       console.error('Error fetching NYC DOB Violations from Socrata API:', error);
       return [];
