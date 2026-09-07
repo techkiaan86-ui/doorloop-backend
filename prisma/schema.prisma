@@ -114,8 +114,8 @@ model Property {
   currentValue        Float
   monthlyExpenses     Float         @default(0)
   createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
   companyId           String?
+  nycBin              String?
   imageUrl            String?       @db.Text
   buildings           Building[]
   leases              Lease[]

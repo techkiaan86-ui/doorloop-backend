@@ -1410,36 +1410,44 @@ export class PortalController {
       const companyId = req.user?.companyId;
 
       if (violationId) {
-        // 1. Update violation status to Resolved in DB
+        // 1. Mark violation status as Disputed/In Progress or keep track
         await prisma.violation.updateMany({
           where: { id: violationId },
-          data: { status: 'Resolved' },
+          data: { status: 'Disputed' },
         });
 
-        // 2. Fetch violation details to create a real WorkOrder in DB
+        // 2. Fetch violation details to create a real ServiceRequest in DB
         const violation = await prisma.violation.findFirst({
           where: { id: violationId },
-          include: { unit: true },
+          include: { unit: { include: { property: true } } },
         });
 
         if (violation) {
           let targetPropertyId: string | undefined = violation.unit?.propertyId;
+          let targetPropertyName: string = violation.unit?.property?.name || 'NYC Building Asset';
+
           if (!targetPropertyId) {
             const firstProp = await prisma.property.findFirst({
               where: companyId ? { companyId } : {},
             });
             targetPropertyId = firstProp?.id;
+            targetPropertyName = firstProp?.name || 'NYC Building Asset';
           }
 
           if (targetPropertyId) {
-            await prisma.workOrder.create({
+            // Create ServiceRequest so it lands in Service Requests UI for staff assignment
+            await prisma.serviceRequest.create({
               data: {
                 propertyId: targetPropertyId,
+                propertyName: targetPropertyName,
+                unitNumber: violation.unit?.unitNumber || 'Building Wide',
+                tenantName: 'NYC DOB Compliance Auditor',
                 title: `NYC DOB Violation: ${violation.title}`,
                 description: violation.description || 'DOB Building Compliance Citation',
+                category: 'Building Code Compliance',
                 priority: 'Emergency',
-                status: 'Assigned',
-                estimatedCost: violation.fineAmount || 250,
+                status: 'Pending',
+                messages: '[]',
                 companyId: companyId || violation.companyId || undefined,
               },
             });
@@ -1448,7 +1456,7 @@ export class PortalController {
       }
       return sendSuccess({
         res,
-        message: 'Violation dispatched and converted to Work Order in DB successfully',
+        message: 'Violation dispatched and converted to Service Request in DB successfully',
       });
     } catch (error) {
       next(error);

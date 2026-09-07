@@ -125,6 +125,7 @@ export class PropertyService {
         currentValue: Number(data.currentValue) || 1200000,
         imageUrl: imageUrl,
         companyId: data.companyId,
+        nycBin: data.nycBin || data.bin || null,
       },
     });
   }
@@ -189,6 +190,8 @@ export class PropertyService {
       }
     }
 
+    const binVal = data.nycBin !== undefined ? data.nycBin : (data.bin !== undefined ? data.bin : prop.nycBin);
+
     return prisma.property.update({
       where: { id },
       data: {
@@ -207,6 +210,7 @@ export class PropertyService {
         squareFootage: data.squareFootage !== undefined ? Number(data.squareFootage) : prop.squareFootage,
         purchasePrice: data.purchasePrice !== undefined ? Number(data.purchasePrice) : prop.purchasePrice,
         currentValue: data.currentValue !== undefined ? Number(data.currentValue) : prop.currentValue,
+        nycBin: binVal,
         imageUrl: imageUrl,
       },
     });
