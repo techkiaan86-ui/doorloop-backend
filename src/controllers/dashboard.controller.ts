@@ -70,6 +70,16 @@ export class DashboardController {
         },
       });
 
+      // Calculate monthly revenue from Units rentAmount or Rent Payments in database
+      const allUnits = await prisma.unit.findMany({
+        where: companyId ? { property: { companyId } } : {},
+      });
+      const unitsRentSum = allUnits.reduce((sum: number, u: any) => sum + (u.rentAmount || 0), 0);
+
+      const computedMonthlyRevenue = monthlyRevenue > 0 
+        ? monthlyRevenue 
+        : (unitsRentSum > 0 ? unitsRentSum : 0);
+
       return sendSuccess({
         res,
         data: {
@@ -78,9 +88,9 @@ export class DashboardController {
           occupiedUnits,
           vacantUnits,
           occupancyRate,
-          monthlyRevenue: monthlyRevenue || (totalProperties > 0 ? 15000 : 0),
+          monthlyRevenue: computedMonthlyRevenue,
           pendingRent: pendingRent || 0,
-          expenses: totalExpenses || (totalProperties > 0 ? 4500 : 0),
+          expenses: totalExpenses || 0,
           openMaintenance,
           leasesExpiringSoon,
         },
