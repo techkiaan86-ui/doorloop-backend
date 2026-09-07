@@ -58,7 +58,10 @@ router.post('/screening/reports/:id/upload', uploadScreeningReportDoc.single('do
 
 router.get('/violations', (req, res, next) => portalController.getViolations(req, res, next));
 router.post('/violations', (req, res, next) => portalController.createViolation(req, res, next));
+router.get('/violations/sync-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
 router.post('/violations/sync-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
+router.get('/violations/sync-nyc-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
+router.post('/violations/sync-nyc-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
 
 // General Dashboard User Profile Views
 router.get('/user/profile', (req, res, next) => portalController.getUserProfile(req, res, next));
