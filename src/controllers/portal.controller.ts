@@ -1296,8 +1296,11 @@ export class PortalController {
 
   async syncNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const bin = (req.query.bin as string) || (req.body?.bin as string) || '1000000';
+      const bin = (req.query.bin as string) || (req.body?.bin as string) || '';
       const cleanBin = bin.trim();
+      if (!cleanBin) {
+        return sendSuccess({ res, data: { syncedCount: 0, violations: [] }, message: 'BIN parameter is required.' });
+      }
       let companyId = req.user?.companyId;
 
       if (!companyId) {
@@ -1308,21 +1311,37 @@ export class PortalController {
       const { nycDobService } = await import('../services/nycDob.service');
       const results = await nycDobService.fetchViolationsByBin(cleanBin);
 
-      // Persist to DB (Match target Property by BIN)
+      // Persist to DB (Match target Property by BIN or Real Street Address)
       if (results.length > 0) {
         try {
-          // Find target property by nycBin or bin or matching address
+          const firstRes = results[0];
+          const streetName = (firstRes?.street || '').trim();
+          const houseNum = (firstRes?.houseNumber || '').trim();
+          const fullRealAddress = (houseNum && streetName) ? `${houseNum} ${streetName}` : (streetName || '');
+
+          // Find target property by nycBin, cleanBin in address, or street name match
           let targetProperty = await prisma.property.findFirst({
             where: {
               ...(companyId ? { companyId } : {}),
               OR: [
                 { nycBin: cleanBin },
                 { address: { contains: cleanBin } },
+                ...(streetName.length > 3 ? [
+                  { address: { contains: streetName } },
+                  { name: { contains: streetName } },
+                ] : []),
               ],
             },
           });
 
-          if (!targetProperty) {
+          if (targetProperty) {
+            if (!targetProperty.nycBin) {
+              await prisma.property.update({
+                where: { id: targetProperty.id },
+                data: { nycBin: cleanBin },
+              });
+            }
+          } else {
             let owner = await prisma.owner.findFirst({
               where: companyId ? { companyId } : {},
             });
@@ -1337,14 +1356,16 @@ export class PortalController {
               });
             }
 
+            const autoPropName = fullRealAddress ? fullRealAddress : `NYC Property (BIN ${cleanBin})`;
+
             targetProperty = await prisma.property.create({
               data: {
-                name: `NYC Building Asset (BIN ${cleanBin})`,
+                name: autoPropName,
                 type: 'Commercial',
                 ownerId: owner.id,
                 nycBin: cleanBin,
-                address: `BIN ${cleanBin}, New York, NY`,
-                streetAddress: `BIN ${cleanBin} Sanford Ave`,
+                address: fullRealAddress ? `${fullRealAddress}, New York, NY` : `BIN ${cleanBin}, New York, NY`,
+                streetAddress: fullRealAddress || `BIN ${cleanBin}`,
                 city: 'New York',
                 state: 'NY',
                 country: 'USA',
@@ -1370,7 +1391,7 @@ export class PortalController {
               building = await prisma.building.create({
                 data: {
                   propertyId: targetProperty.id,
-                  name: 'Main Tower',
+                  name: 'Main Building',
                   floors: 6,
                 },
               });
@@ -1393,7 +1414,7 @@ export class PortalController {
             });
           }
 
-          // Persist violations into DB for THIS target property
+          // Persist violations into DB for THIS target property (UPSERT Mode)
           for (const item of results.slice(0, 100)) {
             const existing = await prisma.violation.findFirst({
               where: {
@@ -1411,6 +1432,15 @@ export class PortalController {
                   description: item.description,
                   fineAmount: item.severity === 'Critical' ? 500 : 250,
                   status: item.status,
+                },
+              });
+            } else {
+              // Update status and description if changed in NYC Open Data
+              await prisma.violation.update({
+                where: { id: existing.id },
+                data: {
+                  status: item.status,
+                  description: item.description,
                 },
               });
             }
@@ -1506,6 +1536,15 @@ export class PortalController {
                 },
               });
               syncedForThisProp++;
+            } else {
+              // Update compliance status if updated by NYC Dept of Buildings
+              await prisma.violation.update({
+                where: { id: existing.id },
+                data: {
+                  status: item.status,
+                  description: item.description,
+                },
+              });
             }
           }
 

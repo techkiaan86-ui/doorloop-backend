@@ -6,6 +6,8 @@ export interface NycDobViolationResult {
   dispositionComments?: string;
   deviceNumber?: string;
   ecbNumber?: string;
+  houseNumber?: string;
+  street?: string;
   status: string;
   severity: 'Critical' | 'Warning';
 }
@@ -24,7 +26,8 @@ export class NycDobService {
         headers['X-App-Token'] = appToken;
       }
 
-      const cleanBin = bin ? bin.trim() : '1000000';
+      const cleanBin = bin ? bin.trim() : '';
+      if (!cleanBin) return [];
       const params = new URLSearchParams({
         bin: cleanBin,
         $limit: '1000',
@@ -68,6 +71,8 @@ export class NycDobService {
           dispositionComments: item.disposition_comments,
           deviceNumber: item.device_number,
           ecbNumber: item.ecb_number,
+          houseNumber: item.house_number,
+          street: item.street,
           status: isOpen ? 'Open' : 'Resolved',
           severity: (item.violation_type_code?.includes('V*') || item.ecb_number || category.includes('ACTIVE')) ? 'Critical' : 'Warning',
         };

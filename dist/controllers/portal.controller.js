@@ -1245,8 +1245,11 @@ class PortalController {
     }
     async syncNycDobViolations(req, res, next) {
         try {
-            const bin = req.query.bin || req.body?.bin || '1000000';
+            const bin = req.query.bin || req.body?.bin || '';
             const cleanBin = bin.trim();
+            if (!cleanBin) {
+                return (0, apiResponse_1.sendSuccess)({ res, data: { syncedCount: 0, violations: [] }, message: 'BIN parameter is required.' });
+            }
             let companyId = req.user?.companyId;
             if (!companyId) {
                 const firstCompany = await database_1.default.company.findFirst();
@@ -1254,20 +1257,36 @@ class PortalController {
             }
             const { nycDobService } = await Promise.resolve().then(() => __importStar(require('../services/nycDob.service')));
             const results = await nycDobService.fetchViolationsByBin(cleanBin);
-            // Persist to DB (Match target Property by BIN)
+            // Persist to DB (Match target Property by BIN or Real Street Address)
             if (results.length > 0) {
                 try {
-                    // Find target property by nycBin or bin or matching address
+                    const firstRes = results[0];
+                    const streetName = (firstRes?.street || '').trim();
+                    const houseNum = (firstRes?.houseNumber || '').trim();
+                    const fullRealAddress = (houseNum && streetName) ? `${houseNum} ${streetName}` : (streetName || '');
+                    // Find target property by nycBin, cleanBin in address, or street name match
                     let targetProperty = await database_1.default.property.findFirst({
                         where: {
                             ...(companyId ? { companyId } : {}),
                             OR: [
                                 { nycBin: cleanBin },
                                 { address: { contains: cleanBin } },
+                                ...(streetName.length > 3 ? [
+                                    { address: { contains: streetName } },
+                                    { name: { contains: streetName } },
+                                ] : []),
                             ],
                         },
                     });
-                    if (!targetProperty) {
+                    if (targetProperty) {
+                        if (!targetProperty.nycBin) {
+                            await database_1.default.property.update({
+                                where: { id: targetProperty.id },
+                                data: { nycBin: cleanBin },
+                            });
+                        }
+                    }
+                    else {
                         let owner = await database_1.default.owner.findFirst({
                             where: companyId ? { companyId } : {},
                         });
@@ -1281,14 +1300,15 @@ class PortalController {
                                 },
                             });
                         }
+                        const autoPropName = fullRealAddress ? fullRealAddress : `NYC Property (BIN ${cleanBin})`;
                         targetProperty = await database_1.default.property.create({
                             data: {
-                                name: `NYC Building Asset (BIN ${cleanBin})`,
+                                name: autoPropName,
                                 type: 'Commercial',
                                 ownerId: owner.id,
                                 nycBin: cleanBin,
-                                address: `BIN ${cleanBin}, New York, NY`,
-                                streetAddress: `BIN ${cleanBin} Sanford Ave`,
+                                address: fullRealAddress ? `${fullRealAddress}, New York, NY` : `BIN ${cleanBin}, New York, NY`,
+                                streetAddress: fullRealAddress || `BIN ${cleanBin}`,
                                 city: 'New York',
                                 state: 'NY',
                                 country: 'USA',
@@ -1312,7 +1332,7 @@ class PortalController {
                             building = await database_1.default.building.create({
                                 data: {
                                     propertyId: targetProperty.id,
-                                    name: 'Main Tower',
+                                    name: 'Main Building',
                                     floors: 6,
                                 },
                             });
@@ -1333,7 +1353,7 @@ class PortalController {
                             },
                         });
                     }
-                    // Persist violations into DB for THIS target property
+                    // Persist violations into DB for THIS target property (UPSERT Mode)
                     for (const item of results.slice(0, 100)) {
                         const existing = await database_1.default.violation.findFirst({
                             where: {
@@ -1350,6 +1370,16 @@ class PortalController {
                                     description: item.description,
                                     fineAmount: item.severity === 'Critical' ? 500 : 250,
                                     status: item.status,
+                                },
+                            });
+                        }
+                        else {
+                            // Update status and description if changed in NYC Open Data
+                            await database_1.default.violation.update({
+                                where: { id: existing.id },
+                                data: {
+                                    status: item.status,
+                                    description: item.description,
                                 },
                             });
                         }
@@ -1438,6 +1468,16 @@ class PortalController {
                                 },
                             });
                             syncedForThisProp++;
+                        }
+                        else {
+                            // Update compliance status if updated by NYC Dept of Buildings
+                            await database_1.default.violation.update({
+                                where: { id: existing.id },
+                                data: {
+                                    status: item.status,
+                                    description: item.description,
+                                },
+                            });
                         }
                     }
                     syncedPropertiesResults.push({
