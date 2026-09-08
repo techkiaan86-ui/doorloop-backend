@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -893,6 +926,17 @@ class PortalController {
             const netDistribution = monthlyIncome - monthlyExpenses;
             const totalProperties = properties.length;
             const totalUnits = properties.reduce((sum, p) => sum + (p.unitsCount || p.units?.length || 1), 0);
+            const activeUnitsCount = properties.reduce((sum, p) => {
+                const rawUnits = p.units || [];
+                return sum + rawUnits.filter((u) => u.status === 'Occupied').length;
+            }, 0);
+            const computedOccupancy = totalUnits > 0 ? Math.round((activeUnitsCount / totalUnits) * 100) : 0;
+            const pendingWorkOrders = await database_1.default.workOrder.count({
+                where: {
+                    propertyId: { in: propertyIds },
+                    status: { in: ['Open', 'InProgress'] },
+                },
+            });
             return (0, apiResponse_1.sendSuccess)({
                 res,
                 data: {
@@ -901,10 +945,10 @@ class PortalController {
                     netDistribution,
                     netIncome: netDistribution,
                     totalProperties,
-                    occupancyRate: 95.0,
+                    occupancyRate: computedOccupancy,
                     totalUnits,
-                    activeLeases: totalUnits,
-                    pendingMaintenance: 0,
+                    activeLeases: activeUnitsCount,
+                    pendingMaintenance: pendingWorkOrders,
                 },
             });
         }
@@ -1194,6 +1238,282 @@ class PortalController {
                 },
             });
             return (0, apiResponse_1.sendSuccess)({ res, statusCode: 201, data: violation });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async syncNycDobViolations(req, res, next) {
+        try {
+            const bin = req.query.bin || req.body?.bin || '1000000';
+            const cleanBin = bin.trim();
+            let companyId = req.user?.companyId;
+            if (!companyId) {
+                const firstCompany = await database_1.default.company.findFirst();
+                companyId = firstCompany?.id;
+            }
+            const { nycDobService } = await Promise.resolve().then(() => __importStar(require('../services/nycDob.service')));
+            const results = await nycDobService.fetchViolationsByBin(cleanBin);
+            // Persist to DB (Match target Property by BIN)
+            if (results.length > 0) {
+                try {
+                    // Find target property by nycBin or bin or matching address
+                    let targetProperty = await database_1.default.property.findFirst({
+                        where: {
+                            ...(companyId ? { companyId } : {}),
+                            OR: [
+                                { nycBin: cleanBin },
+                                { address: { contains: cleanBin } },
+                            ],
+                        },
+                    });
+                    if (!targetProperty) {
+                        let owner = await database_1.default.owner.findFirst({
+                            where: companyId ? { companyId } : {},
+                        });
+                        if (!owner) {
+                            owner = await database_1.default.owner.create({
+                                data: {
+                                    name: 'NYC Asset Management',
+                                    email: `owner-${Date.now()}@nycproperties.com`,
+                                    phone: '212-555-0199',
+                                    companyId,
+                                },
+                            });
+                        }
+                        targetProperty = await database_1.default.property.create({
+                            data: {
+                                name: `NYC Building Asset (BIN ${cleanBin})`,
+                                type: 'Commercial',
+                                ownerId: owner.id,
+                                nycBin: cleanBin,
+                                address: `BIN ${cleanBin}, New York, NY`,
+                                streetAddress: `BIN ${cleanBin} Sanford Ave`,
+                                city: 'New York',
+                                state: 'NY',
+                                country: 'USA',
+                                zip: '10001',
+                                yearBuilt: 1990,
+                                squareFootage: 25000,
+                                purchasePrice: 5000000,
+                                currentValue: 7500000,
+                                companyId,
+                            },
+                        });
+                    }
+                    let targetUnit = await database_1.default.unit.findFirst({
+                        where: { propertyId: targetProperty.id },
+                    });
+                    if (!targetUnit) {
+                        let building = await database_1.default.building.findFirst({
+                            where: { propertyId: targetProperty.id },
+                        });
+                        if (!building) {
+                            building = await database_1.default.building.create({
+                                data: {
+                                    propertyId: targetProperty.id,
+                                    name: 'Main Tower',
+                                    floors: 6,
+                                },
+                            });
+                        }
+                        targetUnit = await database_1.default.unit.create({
+                            data: {
+                                propertyId: targetProperty.id,
+                                buildingId: building.id,
+                                unitNumber: 'Building Wide',
+                                floor: 1,
+                                bedrooms: 0,
+                                bathrooms: 1,
+                                squareFootage: 2500,
+                                rentAmount: 0,
+                                securityDeposit: 0,
+                                availabilityDate: new Date(),
+                                status: 'Occupied',
+                            },
+                        });
+                    }
+                    // Persist violations into DB for THIS target property
+                    for (const item of results.slice(0, 100)) {
+                        const existing = await database_1.default.violation.findFirst({
+                            where: {
+                                companyId,
+                                title: item.violationNumber,
+                            },
+                        });
+                        if (!existing) {
+                            await database_1.default.violation.create({
+                                data: {
+                                    companyId,
+                                    unitId: targetUnit.id,
+                                    title: item.violationNumber,
+                                    description: item.description,
+                                    fineAmount: item.severity === 'Critical' ? 500 : 250,
+                                    status: item.status,
+                                },
+                            });
+                        }
+                    }
+                }
+                catch (dbErr) {
+                    console.error('Error persisting violations to DB:', dbErr);
+                }
+            }
+            return (0, apiResponse_1.sendSuccess)({
+                res,
+                data: {
+                    syncedCount: results.length,
+                    violations: results
+                },
+                message: 'NYC DOB Violations synced successfully via NYC Open Data API'
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async syncAllNycDobViolations(req, res, next) {
+        try {
+            let companyId = req.user?.companyId;
+            if (!companyId) {
+                const firstCompany = await database_1.default.company.findFirst();
+                companyId = firstCompany?.id;
+            }
+            const properties = await database_1.default.property.findMany({
+                where: companyId ? { companyId } : {},
+            });
+            const propertiesWithBin = properties.filter((p) => (p.nycBin && p.nycBin.trim().length > 0) || (p.bin && p.bin.trim().length > 0));
+            const { nycDobService } = await Promise.resolve().then(() => __importStar(require('../services/nycDob.service')));
+            const syncedPropertiesResults = [];
+            let totalSyncedCount = 0;
+            for (const prop of propertiesWithBin) {
+                const cleanBin = (prop.nycBin || prop.bin || '').trim();
+                if (!cleanBin)
+                    continue;
+                const results = await nycDobService.fetchViolationsByBin(cleanBin);
+                if (results.length > 0) {
+                    let targetUnit = await database_1.default.unit.findFirst({
+                        where: { propertyId: prop.id },
+                    });
+                    if (!targetUnit) {
+                        let building = await database_1.default.building.findFirst({ where: { propertyId: prop.id } });
+                        if (!building) {
+                            building = await database_1.default.building.create({
+                                data: { propertyId: prop.id, name: 'Main Building', floors: 1 },
+                            });
+                        }
+                        targetUnit = await database_1.default.unit.create({
+                            data: {
+                                propertyId: prop.id,
+                                buildingId: building.id,
+                                unitNumber: 'Building Wide',
+                                floor: 1,
+                                bedrooms: 0,
+                                bathrooms: 1,
+                                squareFootage: 2500,
+                                rentAmount: 0,
+                                securityDeposit: 0,
+                                availabilityDate: new Date(),
+                                status: 'Occupied',
+                            },
+                        });
+                    }
+                    let syncedForThisProp = 0;
+                    for (const item of results.slice(0, 100)) {
+                        const existing = await database_1.default.violation.findFirst({
+                            where: {
+                                companyId,
+                                title: item.violationNumber,
+                            },
+                        });
+                        if (!existing) {
+                            await database_1.default.violation.create({
+                                data: {
+                                    companyId,
+                                    unitId: targetUnit.id,
+                                    title: item.violationNumber,
+                                    description: item.description,
+                                    fineAmount: item.severity === 'Critical' ? 500 : 250,
+                                    status: item.status,
+                                },
+                            });
+                            syncedForThisProp++;
+                        }
+                    }
+                    syncedPropertiesResults.push({
+                        propertyId: prop.id,
+                        propertyName: prop.name,
+                        address: prop.address || prop.streetAddress,
+                        bin: cleanBin,
+                        fetchedCount: results.length,
+                        syncedCount: syncedForThisProp,
+                    });
+                    totalSyncedCount += results.length;
+                }
+            }
+            return (0, apiResponse_1.sendSuccess)({
+                res,
+                data: {
+                    totalSyncedCount,
+                    syncedPropertiesCount: syncedPropertiesResults.length,
+                    syncedProperties: syncedPropertiesResults,
+                },
+                message: `Successfully synced violations across ${syncedPropertiesResults.length} properties.`,
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async dispatchViolation(req, res, next) {
+        try {
+            const { violationId } = req.body;
+            const companyId = req.user?.companyId;
+            if (violationId) {
+                // 1. Mark violation status as Disputed/In Progress or keep track
+                await database_1.default.violation.updateMany({
+                    where: { id: violationId },
+                    data: { status: 'Disputed' },
+                });
+                // 2. Fetch violation details to create a real ServiceRequest in DB
+                const violation = await database_1.default.violation.findFirst({
+                    where: { id: violationId },
+                    include: { unit: { include: { property: true } } },
+                });
+                if (violation) {
+                    let targetPropertyId = violation.unit?.propertyId;
+                    let targetPropertyName = violation.unit?.property?.name || 'NYC Building Asset';
+                    if (!targetPropertyId) {
+                        const firstProp = await database_1.default.property.findFirst({
+                            where: companyId ? { companyId } : {},
+                        });
+                        targetPropertyId = firstProp?.id;
+                        targetPropertyName = firstProp?.name || 'NYC Building Asset';
+                    }
+                    if (targetPropertyId) {
+                        // Create ServiceRequest so it lands in Service Requests UI for staff assignment
+                        await database_1.default.serviceRequest.create({
+                            data: {
+                                propertyId: targetPropertyId,
+                                propertyName: targetPropertyName,
+                                unitNumber: violation.unit?.unitNumber || 'Building Wide',
+                                tenantName: 'NYC DOB Compliance Auditor',
+                                title: `NYC DOB Violation: ${violation.title}`,
+                                description: violation.description || 'DOB Building Compliance Citation',
+                                category: 'Building Code Compliance',
+                                priority: 'Emergency',
+                                status: 'Pending',
+                                messages: '[]',
+                                companyId: companyId || violation.companyId || undefined,
+                            },
+                        });
+                    }
+                }
+            }
+            return (0, apiResponse_1.sendSuccess)({
+                res,
+                message: 'Violation dispatched and converted to Service Request in DB successfully',
+            });
         }
         catch (error) {
             next(error);

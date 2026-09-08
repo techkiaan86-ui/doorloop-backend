@@ -10,7 +10,7 @@ const cloudinary_1 = __importDefault(require("../config/cloudinary"));
 const companyHelper_1 = require("../utils/companyHelper");
 class PropertyService {
     async getAllProperties(companyId, user) {
-        let whereClause = companyId ? { companyId } : {};
+        let whereClause = companyId ? { companyId, status: { not: 'Inactive' } } : { status: { not: 'Inactive' } };
         if ((user?.roleName === 'Owner' || user?.role === 'Owner') && user?.email) {
             const owner = await database_1.default.owner.findFirst({
                 where: { email: user.email },
@@ -126,6 +126,7 @@ class PropertyService {
                 currentValue: Number(data.currentValue) || 1200000,
                 imageUrl: imageUrl,
                 companyId: data.companyId,
+                nycBin: data.nycBin || data.bin || null,
             },
         });
     }
@@ -137,8 +138,9 @@ class PropertyService {
             if (!prop)
                 throw new appError_1.AppError('Property not found.', 404, 'NOT_FOUND');
         }
-        return database_1.default.property.delete({
+        return database_1.default.property.update({
             where: { id },
+            data: { status: 'Inactive' },
         });
     }
     async updateProperty(id, data, file, companyId) {
@@ -187,6 +189,7 @@ class PropertyService {
                 console.error('Cloudinary image upload failed:', err);
             }
         }
+        const binVal = data.nycBin !== undefined ? data.nycBin : (data.bin !== undefined ? data.bin : prop.nycBin);
         return database_1.default.property.update({
             where: { id },
             data: {
@@ -205,6 +208,7 @@ class PropertyService {
                 squareFootage: data.squareFootage !== undefined ? Number(data.squareFootage) : prop.squareFootage,
                 purchasePrice: data.purchasePrice !== undefined ? Number(data.purchasePrice) : prop.purchasePrice,
                 currentValue: data.currentValue !== undefined ? Number(data.currentValue) : prop.currentValue,
+                nycBin: binVal,
                 imageUrl: imageUrl,
             },
         });

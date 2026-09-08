@@ -71,7 +71,8 @@ class SecondaryController {
     async getNotifications(req, res, next) {
         try {
             const companyId = req.user?.companyId;
-            const list = await secondary_service_1.secondaryService.getNotifications(companyId);
+            const role = req.query.role || req.user?.roleName || req.user?.role;
+            const list = await secondary_service_1.secondaryService.getNotifications(companyId, role);
             return (0, apiResponse_1.sendSuccess)({ res, data: list });
         }
         catch (error) {
@@ -83,6 +84,28 @@ class SecondaryController {
             const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
             const item = await secondary_service_1.secondaryService.markNotificationRead(id);
             return (0, apiResponse_1.sendSuccess)({ res, data: item });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async markAllNotificationsRead(req, res, next) {
+        try {
+            const companyId = req.user?.companyId;
+            const role = req.query.role || req.user?.roleName || req.user?.role;
+            const result = await secondary_service_1.secondaryService.markAllNotificationsRead(companyId, role);
+            return (0, apiResponse_1.sendSuccess)({ res, data: result });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async clearNotifications(req, res, next) {
+        try {
+            const companyId = req.user?.companyId;
+            const role = req.query.role || req.user?.roleName || req.user?.role;
+            const result = await secondary_service_1.secondaryService.clearNotifications(companyId, role);
+            return (0, apiResponse_1.sendSuccess)({ res, data: result });
         }
         catch (error) {
             next(error);

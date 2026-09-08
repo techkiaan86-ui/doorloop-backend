@@ -57,9 +57,13 @@ class SecondaryService {
         });
     }
     // Notifications
-    async getNotifications(companyId) {
+    async getNotifications(companyId, role) {
+        const whereClause = companyId ? { companyId } : {};
+        if (role) {
+            whereClause.role = role;
+        }
         return database_1.default.notification.findMany({
-            where: companyId ? { companyId } : {},
+            where: whereClause,
             orderBy: { createdAt: 'desc' },
         });
     }
@@ -67,6 +71,25 @@ class SecondaryService {
         return database_1.default.notification.update({
             where: { id },
             data: { read: true },
+        });
+    }
+    async markAllNotificationsRead(companyId, role) {
+        const whereClause = companyId ? { companyId } : {};
+        if (role) {
+            whereClause.role = role;
+        }
+        return database_1.default.notification.updateMany({
+            where: whereClause,
+            data: { read: true },
+        });
+    }
+    async clearNotifications(companyId, role) {
+        const whereClause = companyId ? { companyId } : {};
+        if (role) {
+            whereClause.role = role;
+        }
+        return database_1.default.notification.deleteMany({
+            where: whereClause,
         });
     }
     // Documents

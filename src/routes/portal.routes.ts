@@ -62,6 +62,8 @@ router.get('/violations/sync-dob', (req, res, next) => portalController.syncNycD
 router.post('/violations/sync-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
 router.get('/violations/sync-nyc-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
 router.post('/violations/sync-nyc-dob', (req, res, next) => portalController.syncNycDobViolations(req, res, next));
+router.get('/violations/sync-all-nyc-dob', (req, res, next) => portalController.syncAllNycDobViolations(req, res, next));
+router.post('/violations/sync-all-nyc-dob', (req, res, next) => portalController.syncAllNycDobViolations(req, res, next));
 router.post('/violations/dispatch', (req, res, next) => portalController.dispatchViolation(req, res, next));
 
 // General Dashboard User Profile Views

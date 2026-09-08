@@ -11,10 +11,13 @@ class DashboardController {
         try {
             const companyId = req.user?.companyId;
             const totalProperties = await database_1.default.property.count({
-                where: companyId ? { companyId } : {},
+                where: {
+                    ...(companyId ? { companyId } : {}),
+                    status: { notIn: ['Inactive', 'Draft'] },
+                },
             });
             const totalUnits = await database_1.default.unit.count({
-                where: companyId ? { property: { companyId } } : {},
+                where: companyId ? { property: { companyId, status: { notIn: ['Inactive', 'Draft'] } } } : {},
             });
             const occupiedUnits = await database_1.default.unit.count({
                 where: {
@@ -64,6 +67,14 @@ class DashboardController {
                     },
                 },
             });
+            // Calculate monthly revenue from Units rentAmount or Rent Payments in database
+            const allUnits = await database_1.default.unit.findMany({
+                where: companyId ? { property: { companyId } } : {},
+            });
+            const unitsRentSum = allUnits.reduce((sum, u) => sum + (u.rentAmount || 0), 0);
+            const computedMonthlyRevenue = monthlyRevenue > 0
+                ? monthlyRevenue
+                : (unitsRentSum > 0 ? unitsRentSum : 0);
             return (0, apiResponse_1.sendSuccess)({
                 res,
                 data: {
@@ -72,9 +83,9 @@ class DashboardController {
                     occupiedUnits,
                     vacantUnits,
                     occupancyRate,
-                    monthlyRevenue: monthlyRevenue || (totalProperties > 0 ? 15000 : 0),
+                    monthlyRevenue: computedMonthlyRevenue,
                     pendingRent: pendingRent || 0,
-                    expenses: totalExpenses || (totalProperties > 0 ? 4500 : 0),
+                    expenses: totalExpenses || 0,
                     openMaintenance,
                     leasesExpiringSoon,
                 },

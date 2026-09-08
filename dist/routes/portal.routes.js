@@ -52,6 +52,13 @@ router.put('/screening/reports/:id', (req, res, next) => portal_controller_1.por
 router.post('/screening/reports/:id/upload', upload_middleware_1.uploadScreeningReportDoc.single('document'), (req, res, next) => portal_controller_1.portalController.uploadScreeningDocument(req, res, next));
 router.get('/violations', (req, res, next) => portal_controller_1.portalController.getViolations(req, res, next));
 router.post('/violations', (req, res, next) => portal_controller_1.portalController.createViolation(req, res, next));
+router.get('/violations/sync-dob', (req, res, next) => portal_controller_1.portalController.syncNycDobViolations(req, res, next));
+router.post('/violations/sync-dob', (req, res, next) => portal_controller_1.portalController.syncNycDobViolations(req, res, next));
+router.get('/violations/sync-nyc-dob', (req, res, next) => portal_controller_1.portalController.syncNycDobViolations(req, res, next));
+router.post('/violations/sync-nyc-dob', (req, res, next) => portal_controller_1.portalController.syncNycDobViolations(req, res, next));
+router.get('/violations/sync-all-nyc-dob', (req, res, next) => portal_controller_1.portalController.syncAllNycDobViolations(req, res, next));
+router.post('/violations/sync-all-nyc-dob', (req, res, next) => portal_controller_1.portalController.syncAllNycDobViolations(req, res, next));
+router.post('/violations/dispatch', (req, res, next) => portal_controller_1.portalController.dispatchViolation(req, res, next));
 // General Dashboard User Profile Views
 router.get('/user/profile', (req, res, next) => portal_controller_1.portalController.getUserProfile(req, res, next));
 router.post('/user/profile', (req, res, next) => portal_controller_1.portalController.updateUserProfile(req, res, next));

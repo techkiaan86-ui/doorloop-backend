@@ -17,6 +17,7 @@ const propertyStatusEnum = zod_1.z.enum([
     'Inactive',
     'Under Review',
     'Archived',
+    'Draft',
 ]);
 exports.createPropertySchema = zod_1.z.object({
     body: zod_1.z.object({
@@ -31,6 +32,7 @@ exports.createPropertySchema = zod_1.z.object({
         state: zod_1.z.string().max(100).optional(),
         country: zod_1.z.string().max(100).default('USA'),
         zip: zod_1.z.string().max(20).optional(),
+        nycBin: zod_1.z.string().max(50).optional(),
         yearBuilt: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().int().min(1700, 'Year built must be at least 1700').max(new Date().getFullYear() + 5, 'Year built is invalid')).default(2020),
         squareFootage: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().min(0, 'Square footage cannot be negative')).default(10000),
         purchasePrice: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().min(0, 'Purchase price cannot be negative')).default(1000000),
@@ -55,6 +57,7 @@ exports.updatePropertySchema = zod_1.z.object({
         state: zod_1.z.string().max(100).optional(),
         country: zod_1.z.string().max(100).optional(),
         zip: zod_1.z.string().max(20).optional(),
+        nycBin: zod_1.z.string().max(50).optional(),
         yearBuilt: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().int().min(1700, 'Year built must be at least 1700').max(new Date().getFullYear() + 5, 'Year built is invalid')).optional(),
         squareFootage: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().min(0, 'Square footage cannot be negative')).optional(),
         purchasePrice: (0, validationHelpers_1.safeNumberSchema)(zod_1.z.number().min(0, 'Purchase price cannot be negative')).optional(),

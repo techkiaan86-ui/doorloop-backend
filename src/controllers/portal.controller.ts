@@ -1297,6 +1297,7 @@ export class PortalController {
   async syncNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const bin = (req.query.bin as string) || (req.body?.bin as string) || '1000000';
+      const cleanBin = bin.trim();
       let companyId = req.user?.companyId;
 
       if (!companyId) {
@@ -1305,20 +1306,23 @@ export class PortalController {
       }
 
       const { nycDobService } = await import('../services/nycDob.service');
-      const results = await nycDobService.fetchViolationsByBin(bin);
+      const results = await nycDobService.fetchViolationsByBin(cleanBin);
 
-      // Persist to DB (Auto-create Property/Unit if not exist)
+      // Persist to DB (Match target Property by BIN)
       if (results.length > 0) {
         try {
-          let targetUnit = await prisma.unit.findFirst({
-            where: companyId ? { property: { companyId } } : {},
+          // Find target property by nycBin or bin or matching address
+          let targetProperty = await prisma.property.findFirst({
+            where: {
+              ...(companyId ? { companyId } : {}),
+              OR: [
+                { nycBin: cleanBin },
+                { address: { contains: cleanBin } },
+              ],
+            },
           });
 
-          if (!targetUnit) {
-            targetUnit = await prisma.unit.findFirst();
-          }
-
-          if (!targetUnit) {
+          if (!targetProperty) {
             let owner = await prisma.owner.findFirst({
               where: companyId ? { companyId } : {},
             });
@@ -1333,17 +1337,18 @@ export class PortalController {
               });
             }
 
-            const property = await prisma.property.create({
+            targetProperty = await prisma.property.create({
               data: {
-                name: `NYC Building Asset (BIN ${bin})`,
+                name: `NYC Building Asset (BIN ${cleanBin})`,
                 type: 'Commercial',
                 ownerId: owner.id,
-                address: `${bin} Sanford Ave, Flushing, NY 11355`,
-                streetAddress: `${bin} Sanford Ave`,
+                nycBin: cleanBin,
+                address: `BIN ${cleanBin}, New York, NY`,
+                streetAddress: `BIN ${cleanBin} Sanford Ave`,
                 city: 'New York',
                 state: 'NY',
                 country: 'USA',
-                zip: '11355',
+                zip: '10001',
                 yearBuilt: 1990,
                 squareFootage: 25000,
                 purchasePrice: 5000000,
@@ -1351,18 +1356,29 @@ export class PortalController {
                 companyId,
               },
             });
+          }
 
-            const building = await prisma.building.create({
-              data: {
-                propertyId: property.id,
-                name: 'Main Tower',
-                floors: 6,
-              },
+          let targetUnit = await prisma.unit.findFirst({
+            where: { propertyId: targetProperty.id },
+          });
+
+          if (!targetUnit) {
+            let building = await prisma.building.findFirst({
+              where: { propertyId: targetProperty.id },
             });
+            if (!building) {
+              building = await prisma.building.create({
+                data: {
+                  propertyId: targetProperty.id,
+                  name: 'Main Tower',
+                  floors: 6,
+                },
+              });
+            }
 
             targetUnit = await prisma.unit.create({
               data: {
-                propertyId: property.id,
+                propertyId: targetProperty.id,
                 buildingId: building.id,
                 unitNumber: 'Building Wide',
                 floor: 1,
@@ -1377,7 +1393,7 @@ export class PortalController {
             });
           }
 
-          // Persist violations into DB (Company-scoped Deduplication)
+          // Persist violations into DB for THIS target property
           for (const item of results.slice(0, 100)) {
             const existing = await prisma.violation.findFirst({
               where: {
@@ -1411,6 +1427,109 @@ export class PortalController {
           violations: results 
         },
         message: 'NYC DOB Violations synced successfully via NYC Open Data API' 
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async syncAllNycDobViolations(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      let companyId = req.user?.companyId;
+      if (!companyId) {
+        const firstCompany = await prisma.company.findFirst();
+        companyId = firstCompany?.id;
+      }
+
+      const properties = await prisma.property.findMany({
+        where: companyId ? { companyId } : {},
+      });
+
+      const propertiesWithBin = properties.filter((p: any) => (p.nycBin && p.nycBin.trim().length > 0) || ((p as any).bin && (p as any).bin.trim().length > 0));
+
+      const { nycDobService } = await import('../services/nycDob.service');
+      const syncedPropertiesResults: any[] = [];
+      let totalSyncedCount = 0;
+
+      for (const prop of propertiesWithBin) {
+        const cleanBin = ((prop.nycBin || (prop as any).bin || '') as string).trim();
+        if (!cleanBin) continue;
+
+        const results = await nycDobService.fetchViolationsByBin(cleanBin);
+        if (results.length > 0) {
+          let targetUnit = await prisma.unit.findFirst({
+            where: { propertyId: prop.id },
+          });
+
+          if (!targetUnit) {
+            let building = await prisma.building.findFirst({ where: { propertyId: prop.id } });
+            if (!building) {
+              building = await prisma.building.create({
+                data: { propertyId: prop.id, name: 'Main Building', floors: 1 },
+              });
+            }
+            targetUnit = await prisma.unit.create({
+              data: {
+                propertyId: prop.id,
+                buildingId: building.id,
+                unitNumber: 'Building Wide',
+                floor: 1,
+                bedrooms: 0,
+                bathrooms: 1,
+                squareFootage: 2500,
+                rentAmount: 0,
+                securityDeposit: 0,
+                availabilityDate: new Date(),
+                status: 'Occupied',
+              },
+            });
+          }
+
+          let syncedForThisProp = 0;
+          for (const item of results.slice(0, 100)) {
+            const existing = await prisma.violation.findFirst({
+              where: {
+                companyId,
+                title: item.violationNumber,
+              },
+            });
+
+            if (!existing) {
+              await prisma.violation.create({
+                data: {
+                  companyId,
+                  unitId: targetUnit.id,
+                  title: item.violationNumber,
+                  description: item.description,
+                  fineAmount: item.severity === 'Critical' ? 500 : 250,
+                  status: item.status,
+                },
+              });
+              syncedForThisProp++;
+            }
+          }
+
+          syncedPropertiesResults.push({
+            propertyId: prop.id,
+            propertyName: prop.name,
+            address: prop.address || prop.streetAddress,
+            bin: cleanBin,
+            fetchedCount: results.length,
+            syncedCount: syncedForThisProp,
+          });
+
+          totalSyncedCount += results.length;
+        }
+      }
+
+      return sendSuccess({
+        res,
+        data: {
+          totalSyncedCount,
+          syncedPropertiesCount: syncedPropertiesResults.length,
+          syncedProperties: syncedPropertiesResults,
+        },
+        message: `Successfully synced violations across ${syncedPropertiesResults.length} properties.`,
       });
     } catch (error) {
       next(error);
