@@ -1319,16 +1319,15 @@ export class PortalController {
           const houseNum = (firstRes?.houseNumber || '').trim();
           const fullRealAddress = (houseNum && streetName) ? `${houseNum} ${streetName}` : (streetName || '');
 
-          // Find target property by nycBin, cleanBin in address, or street name match
+          // Find target property by exact nycBin or exact street address match (no loose contains)
           let targetProperty = await prisma.property.findFirst({
             where: {
               ...(companyId ? { companyId } : {}),
               OR: [
                 { nycBin: cleanBin },
-                { address: { contains: cleanBin } },
-                ...(streetName.length > 3 ? [
-                  { address: { contains: streetName } },
-                  { name: { contains: streetName } },
+                ...(fullRealAddress ? [
+                  { address: { equals: `${fullRealAddress}, New York, NY` } },
+                  { streetAddress: { equals: fullRealAddress } },
                 ] : []),
               ],
             },
