@@ -1800,33 +1800,9 @@ class PortalController {
     }
     async getTenantNotifications(req, res, next) {
         try {
-            let notes = await database_1.default.tenantNotification.findMany({
+            const notes = await database_1.default.tenantNotification.findMany({
                 orderBy: { createdAt: 'desc' },
             });
-            if (notes.length === 0) {
-                await database_1.default.tenantNotification.createMany({
-                    data: [
-                        {
-                            title: 'Monthly Rent Statement Ready',
-                            message: 'Your monthly rent invoice for August 2026 is available for download.',
-                            type: 'info',
-                        },
-                        {
-                            title: 'Maintenance Request Scheduled',
-                            message: 'Work order #WO-1042 for HVAC repair is assigned for Thursday at 10 AM.',
-                            type: 'success',
-                        },
-                        {
-                            title: 'Package Arrived at Front Desk',
-                            message: 'A parcel from Amazon Logistics is waiting at reception.',
-                            type: 'warning',
-                        },
-                    ],
-                });
-                notes = await database_1.default.tenantNotification.findMany({
-                    orderBy: { createdAt: 'desc' },
-                });
-            }
             const formatted = notes.map((n) => ({
                 id: n.id,
                 title: n.title,

@@ -1884,35 +1884,9 @@ export class PortalController {
 
   async getTenantNotifications(req: Request, res: Response, next: NextFunction) {
     try {
-      let notes = await prisma.tenantNotification.findMany({
+      const notes = await prisma.tenantNotification.findMany({
         orderBy: { createdAt: 'desc' },
       });
-
-      if (notes.length === 0) {
-        await prisma.tenantNotification.createMany({
-          data: [
-            {
-              title: 'Monthly Rent Statement Ready',
-              message: 'Your monthly rent invoice for August 2026 is available for download.',
-              type: 'info',
-            },
-            {
-              title: 'Maintenance Request Scheduled',
-              message: 'Work order #WO-1042 for HVAC repair is assigned for Thursday at 10 AM.',
-              type: 'success',
-            },
-            {
-              title: 'Package Arrived at Front Desk',
-              message: 'A parcel from Amazon Logistics is waiting at reception.',
-              type: 'warning',
-            },
-          ],
-        });
-
-        notes = await prisma.tenantNotification.findMany({
-          orderBy: { createdAt: 'desc' },
-        });
-      }
 
       const formatted = notes.map((n: any) => ({
         id: n.id,

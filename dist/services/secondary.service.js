@@ -59,37 +59,16 @@ class SecondaryService {
     // Notifications
     async getNotifications(companyId, role) {
         const whereClause = {};
+        if (companyId) {
+            whereClause.companyId = companyId;
+        }
         if (role) {
             whereClause.role = role;
         }
-        let list = await database_1.default.notification.findMany({
+        return database_1.default.notification.findMany({
             where: whereClause,
             orderBy: { createdAt: 'desc' },
         });
-        if (list.length === 0) {
-            const defaultNotes = [];
-            const currentRole = role || 'Property Manager';
-            if (currentRole === 'Property Manager' || currentRole === 'Super Admin') {
-                defaultNotes.push({ title: 'New Rent Payment Received', message: 'Payment of $1,850 received from Sarah Connor for Unit 304.', type: 'success', role: currentRole, companyId }, { title: 'Lease Agreement Signed', message: 'Lease agreement for Unit 304 has been generated and signed.', type: 'info', role: currentRole, companyId }, { title: 'Maintenance Ticket Submitted', message: 'New high priority maintenance request submitted for Plumbing Leak.', type: 'warning', role: currentRole, companyId });
-            }
-            else if (currentRole === 'Owner') {
-                defaultNotes.push({ title: 'Monthly Distribution Statement Ready', message: 'Your monthly rental revenue report for August 2026 is available.', type: 'info', role: 'Owner', companyId }, { title: 'Portfolio Occupancy Update', message: 'Occupancy rate reached 96% across Sunset Villas portfolio.', type: 'success', role: 'Owner', companyId });
-            }
-            else if (currentRole === 'Maintenance Staff') {
-                defaultNotes.push({ title: 'New Work Order Assigned', message: 'HVAC repair task assigned for Unit 304 - Skyline Lofts.', type: 'warning', role: 'Maintenance Staff', companyId }, { title: 'Inventory Restocked', message: 'Plumbing repair supplies restocked in central warehouse.', type: 'info', role: 'Maintenance Staff', companyId });
-            }
-            else if (currentRole === 'Tenant') {
-                defaultNotes.push({ title: 'Rent Statement Generated', message: 'Your monthly rent invoice for August 2026 is available for download.', type: 'info', role: 'Tenant', companyId }, { title: 'Rent Payment Confirmed', message: 'Your rent payment of $1,850 has been successfully processed.', type: 'success', role: 'Tenant', companyId });
-            }
-            if (defaultNotes.length > 0) {
-                await database_1.default.notification.createMany({ data: defaultNotes });
-                list = await database_1.default.notification.findMany({
-                    where: whereClause,
-                    orderBy: { createdAt: 'desc' },
-                });
-            }
-        }
-        return list;
     }
     async markNotificationRead(id) {
         return database_1.default.notification.update({
