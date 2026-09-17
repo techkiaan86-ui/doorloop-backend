@@ -66,6 +66,13 @@ class InspectionService {
             throw new Error('Move In record not found');
         if (moveIn.status === 'COMPLETED')
             throw new Error('Move In is already completed');
+        // Return existing inspection if already started for this Move-In
+        const existingInspection = await database_1.default.inspection.findFirst({
+            where: { moveInId: data.moveInId },
+        });
+        if (existingInspection) {
+            return existingInspection;
+        }
         const template = await database_1.default.inspectionTemplate.findFirst({
             where: { id: data.templateId, ...(data.companyId ? { companyId: data.companyId } : {}) },
             include: {
@@ -78,11 +85,11 @@ class InspectionService {
             throw new Error('Inspection template not found');
         if (!template.active)
             throw new Error('Inspection template is inactive');
-        // Generate unique inspection number, e.g. MI-123456
-        const count = await database_1.default.inspection.count();
-        const formattedCount = String(count + 1).padStart(6, '0');
+        // Generate guaranteed unique inspection number (e.g. MI-8392019)
         const prefix = template.type === 'MOVE_OUT' ? 'MO' : 'MI';
-        const inspectionNumber = `${prefix}-${formattedCount}`;
+        const timestampSuffix = String(Date.now()).slice(-6);
+        const randomSuffix = String(Math.floor(100 + Math.random() * 900));
+        const inspectionNumber = `${prefix}-${timestampSuffix}${randomSuffix}`;
         return database_1.default.$transaction(async (tx) => {
             // 1. Update MoveIn status
             await tx.moveIn.update({

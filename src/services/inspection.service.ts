@@ -62,6 +62,14 @@ export class InspectionService {
     if (!moveIn) throw new Error('Move In record not found');
     if (moveIn.status === 'COMPLETED') throw new Error('Move In is already completed');
 
+    // Return existing inspection if already started for this Move-In
+    const existingInspection = await prisma.inspection.findFirst({
+      where: { moveInId: data.moveInId },
+    });
+    if (existingInspection) {
+      return existingInspection;
+    }
+
     const template = await prisma.inspectionTemplate.findFirst({
       where: { id: data.templateId, ...(data.companyId ? { companyId: data.companyId } : {}) },
       include: {
@@ -73,11 +81,11 @@ export class InspectionService {
     if (!template) throw new Error('Inspection template not found');
     if (!template.active) throw new Error('Inspection template is inactive');
 
-    // Generate unique inspection number, e.g. MI-123456
-    const count = await prisma.inspection.count();
-    const formattedCount = String(count + 1).padStart(6, '0');
+    // Generate guaranteed unique inspection number (e.g. MI-8392019)
     const prefix = template.type === 'MOVE_OUT' ? 'MO' : 'MI';
-    const inspectionNumber = `${prefix}-${formattedCount}`;
+    const timestampSuffix = String(Date.now()).slice(-6);
+    const randomSuffix = String(Math.floor(100 + Math.random() * 900));
+    const inspectionNumber = `${prefix}-${timestampSuffix}${randomSuffix}`;
 
     return prisma.$transaction(
       async (tx) => {
