@@ -2330,11 +2330,12 @@ class PortalController {
     async createInspection(req, res, next) {
         try {
             const { status, date } = req.body;
-            const count = await database_1.default.inspection.count();
-            const formattedCount = String(count + 1).padStart(6, '0');
+            const timestampSuffix = String(Date.now()).slice(-6);
+            const randomSuffix = String(Math.floor(100 + Math.random() * 900));
+            const inspectionNumber = `MI-${timestampSuffix}${randomSuffix}`;
             const inspection = await database_1.default.inspection.create({
                 data: {
-                    inspectionNumber: `MI-${formattedCount}`,
+                    inspectionNumber,
                     status: status || 'DRAFT',
                     startedAt: date ? new Date(date) : new Date(),
                     templateName: 'Standard Template',

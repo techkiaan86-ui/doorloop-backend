@@ -67,6 +67,14 @@ class MoveInService {
         });
     }
     async createMoveIn(data) {
+        if (data.leaseId) {
+            const existing = await database_1.default.moveIn.findFirst({
+                where: { leaseId: data.leaseId },
+            });
+            if (existing) {
+                return existing;
+            }
+        }
         return database_1.default.moveIn.create({
             data: {
                 leaseId: data.leaseId,

@@ -65,6 +65,14 @@ export class MoveInService {
   }
 
   async createMoveIn(data: any) {
+    if (data.leaseId) {
+      const existing = await prisma.moveIn.findFirst({
+        where: { leaseId: data.leaseId },
+      });
+      if (existing) {
+        return existing;
+      }
+    }
     return prisma.moveIn.create({
       data: {
         leaseId: data.leaseId,

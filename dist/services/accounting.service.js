@@ -50,6 +50,12 @@ class AccountingService {
         return accounts;
     }
     async createAccount(data, companyId) {
+        const existing = await database_1.default.coAAccount.findFirst({
+            where: companyId ? { companyId, accountCode: data.accountCode } : { accountCode: data.accountCode },
+        });
+        if (existing) {
+            throw new appError_1.AppError(`Account Code "${data.accountCode}" already exists in your Chart of Accounts.`, 400);
+        }
         return database_1.default.coAAccount.create({
             data: {
                 accountCode: data.accountCode,

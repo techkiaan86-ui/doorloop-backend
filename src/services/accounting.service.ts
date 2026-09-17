@@ -51,6 +51,12 @@ export class AccountingService {
   }
 
   async createAccount(data: { accountCode: string; accountName: string; type: string; balance?: number }, companyId?: string) {
+    const existing = await prisma.coAAccount.findFirst({
+      where: companyId ? { companyId, accountCode: data.accountCode } : { accountCode: data.accountCode },
+    });
+    if (existing) {
+      throw new AppError(`Account Code "${data.accountCode}" already exists in your Chart of Accounts.`, 400);
+    }
     return prisma.coAAccount.create({
       data: {
         accountCode: data.accountCode,

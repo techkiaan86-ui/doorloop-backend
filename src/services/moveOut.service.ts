@@ -67,6 +67,14 @@ export class MoveOutService {
   }
 
   async createMoveOut(data: any) {
+    if (data.leaseId) {
+      const existing = await prisma.moveOut.findFirst({
+        where: { leaseId: data.leaseId },
+      });
+      if (existing) {
+        return existing;
+      }
+    }
     // Determine the unitId from the lease if not supplied
     let unitId = data.unitId;
     if (!unitId) {
@@ -130,6 +138,14 @@ export class MoveOutService {
     });
     if (!moveOut) throw new Error('Move Out not found');
 
+    // Return existing inspection if already started for this Move-Out
+    const existingInspection = await prisma.inspection.findFirst({
+      where: { moveOutId },
+    });
+    if (existingInspection) {
+      return existingInspection;
+    }
+
     // Retrieve inspection template
     const template = await prisma.inspectionTemplate.findFirst({
       where: { id: templateId, ...(companyId ? { companyId } : {}) },
@@ -141,9 +157,10 @@ export class MoveOutService {
     });
     if (!template) throw new Error('Inspection template not found');
 
-    // Generate inspection number
-    const count = await prisma.inspection.count();
-    const inspectionNumber = `MO-${String(count + 1).padStart(6, '0')}`;
+    // Generate guaranteed unique inspection number (e.g. MO-8392019)
+    const timestampSuffix = String(Date.now()).slice(-6);
+    const randomSuffix = String(Math.floor(100 + Math.random() * 900));
+    const inspectionNumber = `MO-${timestampSuffix}${randomSuffix}`;
 
     return prisma.$transaction(async (tx) => {
       // 1. Create inspection snapshot
