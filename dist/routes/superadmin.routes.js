@@ -17,6 +17,8 @@ router.delete('/company-users/:id', (req, res, next) => superadmin_controller_1.
 // SaaS Subscription Plans
 router.get('/plans', (req, res, next) => superadmin_controller_1.superAdminController.getPlans(req, res, next));
 router.post('/plans', (req, res, next) => superadmin_controller_1.superAdminController.createPlan(req, res, next));
+router.put('/plans/:id', (req, res, next) => superadmin_controller_1.superAdminController.updatePlan(req, res, next));
+router.delete('/plans/:id', (req, res, next) => superadmin_controller_1.superAdminController.deletePlan(req, res, next));
 // SaaS Invoices
 router.get('/invoices', (req, res, next) => superadmin_controller_1.superAdminController.getInvoices(req, res, next));
 router.post('/invoices', (req, res, next) => superadmin_controller_1.superAdminController.createInvoice(req, res, next));

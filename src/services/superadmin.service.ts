@@ -528,6 +528,14 @@ export class SuperAdminService {
       await prisma.saaSPlan.createMany({
         data: [
           {
+            name: '14-Day Free Trial',
+            price: 0,
+            billingCycle: '14 Days Free',
+            maxProperties: 10,
+            maxUnits: 20,
+            features: '14 Days Full Access, Up to 10 properties, Basic tenant screening, Standard ledger billing',
+          },
+          {
             name: 'Starter',
             price: 99,
             billingCycle: 'Monthly',
@@ -558,7 +566,6 @@ export class SuperAdminService {
     return plans;
   }
 
-
   async createPlan(data: { name: string; price: number; billingCycle?: string; maxProperties?: number; maxUnits?: number; features?: string }) {
     return prisma.saaSPlan.create({
       data: {
@@ -569,6 +576,26 @@ export class SuperAdminService {
         maxUnits: data.maxUnits || 500,
         features: data.features || 'Unlimited Users, Advanced Analytics, Automated Workflows',
       },
+    });
+  }
+
+  async updatePlan(id: string, data: any) {
+    return prisma.saaSPlan.update({
+      where: { id },
+      data: {
+        name: data.name,
+        price: data.price !== undefined ? parseFloat(data.price as any) : undefined,
+        billingCycle: data.billingCycle,
+        maxProperties: data.maxProperties !== undefined ? parseInt(data.maxProperties as any) : undefined,
+        maxUnits: data.maxUnits !== undefined ? parseInt(data.maxUnits as any) : undefined,
+        features: data.features,
+      },
+    });
+  }
+
+  async deletePlan(id: string) {
+    return prisma.saaSPlan.delete({
+      where: { id },
     });
   }
 

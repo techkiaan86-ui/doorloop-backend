@@ -468,6 +468,14 @@ class SuperAdminService {
             await database_1.default.saaSPlan.createMany({
                 data: [
                     {
+                        name: '14-Day Free Trial',
+                        price: 0,
+                        billingCycle: '14 Days Free',
+                        maxProperties: 10,
+                        maxUnits: 20,
+                        features: '14 Days Full Access, Up to 10 properties, Basic tenant screening, Standard ledger billing',
+                    },
+                    {
                         name: 'Starter',
                         price: 99,
                         billingCycle: 'Monthly',
@@ -507,6 +515,24 @@ class SuperAdminService {
                 maxUnits: data.maxUnits || 500,
                 features: data.features || 'Unlimited Users, Advanced Analytics, Automated Workflows',
             },
+        });
+    }
+    async updatePlan(id, data) {
+        return database_1.default.saaSPlan.update({
+            where: { id },
+            data: {
+                name: data.name,
+                price: data.price !== undefined ? parseFloat(data.price) : undefined,
+                billingCycle: data.billingCycle,
+                maxProperties: data.maxProperties !== undefined ? parseInt(data.maxProperties) : undefined,
+                maxUnits: data.maxUnits !== undefined ? parseInt(data.maxUnits) : undefined,
+                features: data.features,
+            },
+        });
+    }
+    async deletePlan(id) {
+        return database_1.default.saaSPlan.delete({
+            where: { id },
         });
     }
     // SaaS Invoices
