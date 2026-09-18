@@ -43,6 +43,24 @@ export class PropertyService {
 
   async createProperty(data: any, file?: any) {
     const companyId = await getManagerCompanyId(undefined, data.companyId);
+
+    if (companyId) {
+      const company = await prisma.company.findUnique({ where: { id: companyId } });
+      if (company) {
+        const currentCount = await prisma.property.count({
+          where: { companyId, status: { not: 'Inactive' } },
+        });
+        const maxLimit = company.maxProperties || 50;
+        if (currentCount >= maxLimit) {
+          throw new AppError(
+            `Property creation limit reached! Your plan (${company.planName}) permits up to ${maxLimit} properties. Please upgrade your subscription plan.`,
+            403,
+            'PLAN_LIMIT_EXCEEDED'
+          );
+        }
+      }
+    }
+
     let ownerId = data.ownerId;
     let ownerExists = false;
 

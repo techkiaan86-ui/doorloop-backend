@@ -667,6 +667,9 @@ model Company {
   email               String               @unique
   phone               String
   planName            String               @default("Pro Plan")
+  trialEndsAt         DateTime?
+  maxProperties       Int                  @default(50)
+  maxUnits            Int                  @default(500)
   storageUsed         String               @default("1.2 GB")
   status              String               @default("Active")
   createdAt           DateTime             @default(now())

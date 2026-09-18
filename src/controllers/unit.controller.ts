@@ -64,6 +64,23 @@ export class UnitController {
       } = req.body;
       const companyId = req.user?.companyId;
 
+      if (companyId) {
+        const company = await prisma.company.findUnique({ where: { id: companyId } });
+        if (company) {
+          const totalUnitsCount = await prisma.unit.count({
+            where: { property: { companyId } },
+          });
+          const maxUnitsLimit = company.maxUnits || 500;
+          if (totalUnitsCount >= maxUnitsLimit) {
+            throw new AppError(
+              `Unit creation limit reached! Your plan (${company.planName}) permits up to ${maxUnitsLimit} units. Please upgrade your subscription plan.`,
+              403,
+              'PLAN_LIMIT_EXCEEDED'
+            );
+          }
+        }
+      }
+
       let targetPropertyId = propertyId;
       let property = null;
       if (targetPropertyId) {

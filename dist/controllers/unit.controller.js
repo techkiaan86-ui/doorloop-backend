@@ -54,6 +54,18 @@ class UnitController {
         try {
             const { propertyId, buildingId, unitNumber, floor, bedrooms, bathrooms, squareFootage, rentAmount, securityDeposit, availabilityDate, status, } = req.body;
             const companyId = req.user?.companyId;
+            if (companyId) {
+                const company = await database_1.default.company.findUnique({ where: { id: companyId } });
+                if (company) {
+                    const totalUnitsCount = await database_1.default.unit.count({
+                        where: { property: { companyId } },
+                    });
+                    const maxUnitsLimit = company.maxUnits || 500;
+                    if (totalUnitsCount >= maxUnitsLimit) {
+                        throw new appError_1.AppError(`Unit creation limit reached! Your plan (${company.planName}) permits up to ${maxUnitsLimit} units. Please upgrade your subscription plan.`, 403, 'PLAN_LIMIT_EXCEEDED');
+                    }
+                }
+            }
             let targetPropertyId = propertyId;
             let property = null;
             if (targetPropertyId) {

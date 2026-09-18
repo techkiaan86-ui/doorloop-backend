@@ -73,35 +73,45 @@ class SuperAdminService {
             counter++;
         }
         const planName = data.planName || 'Starter Plan';
-        let planPrice = Number(data.price) || 99;
+        let planPrice = Number(data.price) !== undefined && !isNaN(Number(data.price)) ? Number(data.price) : 99;
         if (planName.toLowerCase().includes('enterprise')) {
             planPrice = 499;
         }
         else if (planName.toLowerCase().includes('pro')) {
             planPrice = 199;
         }
+        else if (planName.toLowerCase().includes('trial') || planName.toLowerCase().includes('free')) {
+            planPrice = 0;
+        }
+        const isFreeTrial = planPrice === 0 || planName.toLowerCase().includes('trial') || planName.toLowerCase().includes('free');
+        const trialEndsAt = isFreeTrial ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) : null;
+        // Fetch corresponding plan details from DB to assign proper limits
+        const dbPlans = await database_1.default.saaSPlan.findMany();
+        const matchingPlan = dbPlans.find(p => p.name.toLowerCase().includes(planName.toLowerCase().replace(' plan', '')) || planName.toLowerCase().includes(p.name.toLowerCase()));
+        const maxProperties = matchingPlan ? matchingPlan.maxProperties : (isFreeTrial ? 10 : 50);
+        const maxUnits = matchingPlan ? matchingPlan.maxUnits : (isFreeTrial ? 20 : 500);
         // 1. Process & Verify Subscription Payment via Authorize.Net Gateway
         let gatewayTxId = data.transactionId || '';
         if (!gatewayTxId) {
-            if (data.isSuperadmin) {
+            if (data.isSuperadmin || isFreeTrial) {
                 const now = new Date();
                 const year = now.getFullYear();
                 const month = String(now.getMonth() + 1).padStart(2, '0');
                 const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-                gatewayTxId = `REF-${year}${month}-${randomPart}`;
+                gatewayTxId = isFreeTrial ? `TRIAL-${year}${month}-${randomPart}` : `REF-${year}${month}-${randomPart}`;
             }
             else {
                 throw new Error('Payment Transaction ID is required for registration.');
             }
         }
-        if (!data.isSuperadmin) {
+        if (!data.isSuperadmin && !isFreeTrial) {
             const verifyResult = await authorizeNet_service_1.authorizeNetService.verifyTransaction(gatewayTxId);
             if (!verifyResult.success) {
                 throw new Error(`Payment verification failed: ${verifyResult.message}`);
             }
             planPrice = verifyResult.amount || planPrice;
         }
-        // 2. Create Company with Active status
+        // 2. Create Company with Active status and plan limits
         let company = await database_1.default.company.findFirst({ where: { email: data.email } });
         if (!company) {
             company = await database_1.default.company.create({
@@ -112,6 +122,9 @@ class SuperAdminService {
                     email: data.email,
                     phone: data.phone,
                     planName: planName,
+                    trialEndsAt: trialEndsAt,
+                    maxProperties: maxProperties,
+                    maxUnits: maxUnits,
                     storageUsed: '1.2 GB',
                     status: 'Active',
                 },
@@ -120,7 +133,13 @@ class SuperAdminService {
         else {
             company = await database_1.default.company.update({
                 where: { id: company.id },
-                data: { status: 'Active', planName: planName },
+                data: {
+                    status: 'Active',
+                    planName: planName,
+                    trialEndsAt: trialEndsAt,
+                    maxProperties: maxProperties,
+                    maxUnits: maxUnits,
+                },
             });
         }
         // 3. Log Superadmin Invoice / Revenue Record

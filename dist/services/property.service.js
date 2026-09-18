@@ -46,6 +46,18 @@ class PropertyService {
     }
     async createProperty(data, file) {
         const companyId = await (0, companyHelper_1.getManagerCompanyId)(undefined, data.companyId);
+        if (companyId) {
+            const company = await database_1.default.company.findUnique({ where: { id: companyId } });
+            if (company) {
+                const currentCount = await database_1.default.property.count({
+                    where: { companyId, status: { not: 'Inactive' } },
+                });
+                const maxLimit = company.maxProperties || 50;
+                if (currentCount >= maxLimit) {
+                    throw new appError_1.AppError(`Property creation limit reached! Your plan (${company.planName}) permits up to ${maxLimit} properties. Please upgrade your subscription plan.`, 403, 'PLAN_LIMIT_EXCEEDED');
+                }
+            }
+        }
         let ownerId = data.ownerId;
         let ownerExists = false;
         if (ownerId) {

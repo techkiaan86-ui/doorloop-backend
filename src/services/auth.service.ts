@@ -32,6 +32,17 @@ export class AuthService {
       throw new AppError('Invalid credentials provided.', 401, 'INVALID_CREDENTIALS');
     }
 
+    let isTrialExpired = false;
+    const compObj = user.company as any;
+    if (compObj) {
+      if (compObj.trialEndsAt && new Date(compObj.trialEndsAt) < new Date()) {
+        const pName = (compObj.planName || '').toLowerCase();
+        if (pName.includes('free') || pName.includes('trial')) {
+          isTrialExpired = true;
+        }
+      }
+    }
+
     const payload = {
       userId: user.id,
       email: user.email,
@@ -52,6 +63,12 @@ export class AuthService {
         roleId: user.roleId,
         roleName: user.role?.name || 'Super Admin',
         companyId: user.companyId,
+        companyName: compObj?.name || null,
+        planName: compObj?.planName || null,
+        maxProperties: compObj?.maxProperties || 50,
+        maxUnits: compObj?.maxUnits || 500,
+        trialEndsAt: compObj?.trialEndsAt || null,
+        isTrialExpired,
       },
       accessToken,
       refreshToken,
