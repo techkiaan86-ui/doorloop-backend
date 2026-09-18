@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.prisma = void 0;
 const client_1 = require("@prisma/client");
-const tenantContext_js_1 = require("../utils/tenantContext.js");
+const tenantContext_1 = require("../utils/tenantContext");
 const prismaRaw = new client_1.PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });
@@ -10,7 +10,7 @@ exports.prisma = prismaRaw.$extends({
     query: {
         $allModels: {
             async $allOperations({ model, operation, args, query }) {
-                const store = tenantContext_js_1.tenantContext.getStore();
+                const store = tenantContext_1.tenantContext.getStore();
                 console.log('DEBUG database.ts: store =', store, 'model =', model);
                 if (!store || !store.companyId) {
                     return query(args);

@@ -483,42 +483,17 @@ class SuperAdminService {
         let plans = await database_1.default.saaSPlan.findMany({
             orderBy: { price: 'asc' },
         });
-        if (plans.length === 0) {
-            await database_1.default.saaSPlan.createMany({
-                data: [
-                    {
-                        name: '14-Day Free Trial',
-                        price: 0,
-                        billingCycle: '14 Days Free',
-                        maxProperties: 10,
-                        maxUnits: 20,
-                        features: '14 Days Full Access, Up to 10 properties, Basic tenant screening, Standard ledger billing',
-                    },
-                    {
-                        name: 'Starter',
-                        price: 99,
-                        billingCycle: 'Monthly',
-                        maxProperties: 50,
-                        maxUnits: 100,
-                        features: 'Up to 50 properties, Basic screening logs, Standard ledger billing',
-                    },
-                    {
-                        name: 'Professional',
-                        price: 199,
-                        billingCycle: 'Monthly',
-                        maxProperties: 200,
-                        maxUnits: 500,
-                        features: 'Up to 200 properties, Late Fee rules builder, AI tenant conversation logs',
-                    },
-                    {
-                        name: 'Enterprise',
-                        price: 499,
-                        billingCycle: 'Monthly',
-                        maxProperties: 9999,
-                        maxUnits: 99999,
-                        features: 'Unlimited properties, Developer webhook callbacks, API keys rotation, Dedicated vector library',
-                    },
-                ],
+        const hasFreeTrial = plans.some(p => p.name.toLowerCase().includes('trial') || p.price === 0);
+        if (!hasFreeTrial) {
+            await database_1.default.saaSPlan.create({
+                data: {
+                    name: '14-Day Free Trial',
+                    price: 0,
+                    billingCycle: '14 Days Free',
+                    maxProperties: 10,
+                    maxUnits: 20,
+                    features: '14 Days Full Access, Up to 10 properties, Basic tenant screening, Standard ledger billing',
+                },
             });
             plans = await database_1.default.saaSPlan.findMany({ orderBy: { price: 'asc' } });
         }

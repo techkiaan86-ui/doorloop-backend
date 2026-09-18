@@ -1,5 +1,5 @@
-import prisma from '../config/database.js';
-import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
+import prisma from '../config/database';
+import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export async function getManagerCompanyId(req?: AuthenticatedRequest, explicitId?: string): Promise<string> {
   const isSuperAdmin = req?.user?.roleName === 'Super Admin' || (req?.user as any)?.role === 'Super Admin';
