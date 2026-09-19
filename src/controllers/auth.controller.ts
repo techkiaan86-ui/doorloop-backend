@@ -59,7 +59,22 @@ export class AuthController {
 
   async createHostedPayment(req: Request, res: Response, next: NextFunction) {
     try {
-      const { amount, planName, description } = req.body;
+      const { amount, planName, description, email } = req.body;
+      if (email && typeof email === 'string' && email.trim().length > 0) {
+        const normalizedEmail = email.trim().toLowerCase();
+        const existingCompany = await prisma.company.findFirst({ where: { email: normalizedEmail } });
+        if (existingCompany) {
+          throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+        }
+        const existingUser = await prisma.user.findFirst({ where: { email: normalizedEmail } });
+        if (existingUser && existingUser.companyId) {
+          const userCompany = await prisma.company.findUnique({ where: { id: existingUser.companyId } });
+          if (userCompany) {
+            throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+          }
+        }
+      }
+
       const result = await authorizeNetService.getHostedPaymentToken({
         amount: Number(amount) || 99,
         planName: planName || 'Subscription Plan',
