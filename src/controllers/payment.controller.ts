@@ -78,6 +78,46 @@ export class PaymentController {
     }
   }
 
+  async getActiveGateway(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const gateway = await paymentService.getActiveGateway(companyId);
+      return sendSuccess({ res, data: gateway });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createRazorpayOrder(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const { amount, currency } = req.body;
+      const order = await paymentService.createRazorpayOrder(Number(amount), currency || 'USD', companyId);
+      return sendSuccess({ res, data: order });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async verifyRazorpayPayment(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const companyId = req.user?.companyId;
+      const { razorpayOrderId, razorpayPaymentId, razorpaySignature, amount } = req.body;
+      const result = await paymentService.verifyRazorpayPayment({
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+        amount: Number(amount),
+        companyId,
+        userEmail: req.user?.email,
+        userRole: req.user?.roleName || (req.user as any)?.role,
+      });
+      return sendSuccess({ res, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async deletePayment(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const companyId = req.user?.companyId;
