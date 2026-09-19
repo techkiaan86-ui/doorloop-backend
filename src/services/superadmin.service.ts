@@ -68,14 +68,30 @@ export class SuperAdminService {
 
     const existingCompany = await prisma.company.findFirst({ where: { email: normalizedEmail } });
     if (existingCompany) {
-      throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+      const companyUserCount = await prisma.user.count({ where: { companyId: existingCompany.id } });
+      if (companyUserCount > 0) {
+        throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+      } else {
+        // Delete orphaned company record if it has no active users
+        await this.deleteCompany(existingCompany.id);
+      }
     }
 
     const existingUserCheck = await prisma.user.findFirst({ where: { email: normalizedEmail } });
-    if (existingUserCheck && existingUserCheck.companyId) {
-      const userCompany = await prisma.company.findUnique({ where: { id: existingUserCheck.companyId } });
-      if (userCompany) {
-        throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+    if (existingUserCheck) {
+      if (existingUserCheck.companyId) {
+        const userCompany = await prisma.company.findUnique({ where: { id: existingUserCheck.companyId } });
+        if (userCompany) {
+          throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
+        } else {
+          // User was linked to a company that no longer exists -> clean up orphaned user records
+          await prisma.user.deleteMany({ where: { email: normalizedEmail } });
+          await prisma.companyUser.deleteMany({ where: { email: normalizedEmail } });
+        }
+      } else {
+        // User exists with companyId null -> delete orphaned user record to allow fresh company signup
+        await prisma.user.deleteMany({ where: { email: normalizedEmail } });
+        await prisma.companyUser.deleteMany({ where: { email: normalizedEmail } });
       }
     }
 
@@ -307,6 +323,9 @@ export class SuperAdminService {
   }
 
   async deleteCompany(id: string) {
+    const targetCompany = await prisma.company.findUnique({ where: { id } });
+    const companyEmail = targetCompany?.email ? targetCompany.email.trim().toLowerCase() : null;
+
     // 1. Fetch related IDs for nested/indirect deletions
     const tenants = await prisma.tenant.findMany({
       where: { companyId: id },
@@ -376,14 +395,28 @@ export class SuperAdminService {
       await tx.vendor.deleteMany({ where: { companyId: id } });
       await tx.companyUser.deleteMany({ where: { companyId: id } });
 
+      if (companyEmail) {
+        await tx.companyUser.deleteMany({ where: { email: companyEmail } });
+      }
+
       // Nullify userId reference on audit logs before deleting users
       const companyUsers = await tx.user.findMany({ where: { companyId: id }, select: { id: true } });
-      const userIds = companyUsers.map(u => u.id);
+      let userIds = companyUsers.map(u => u.id);
+
+      if (companyEmail) {
+        const usersByEmail = await tx.user.findMany({ where: { email: companyEmail }, select: { id: true } });
+        const emailUserIds = usersByEmail.map(u => u.id);
+        userIds = Array.from(new Set([...userIds, ...emailUserIds]));
+      }
+
       await tx.auditLog.updateMany({
         where: { userId: { in: userIds } },
         data: { userId: null }
       });
       await tx.user.deleteMany({ where: { companyId: id } });
+      if (companyEmail) {
+        await tx.user.deleteMany({ where: { email: companyEmail } });
+      }
 
       // l. Finally, delete the company record itself
       return tx.company.delete({
@@ -421,15 +454,24 @@ export class SuperAdminService {
 
   async createCompanyUser(data: { companyId?: string; name: string; email: string; role?: string; phone?: string; password?: string; serviceType?: string }) {
     let finalCompanyId = await getManagerCompanyId(undefined, data.companyId);
+    const normEmail = data.email.trim().toLowerCase();
 
-    const existingUser = await prisma.user.findFirst({ where: { email: data.email.trim().toLowerCase() } });
-    if (existingUser) {
+    const existingCompanyUser = await prisma.companyUser.findFirst({ where: { email: normEmail } });
+    if (existingCompanyUser) {
       throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
     }
 
-    const existingCompanyUser = await prisma.companyUser.findFirst({ where: { email: data.email.trim().toLowerCase() } });
-    if (existingCompanyUser) {
-      throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+    const existingUser = await prisma.user.findFirst({ where: { email: normEmail } });
+    if (existingUser) {
+      const activeCompany = await prisma.company.findFirst({ where: { email: normEmail } });
+      const activeOwner = await prisma.owner.findFirst({ where: { email: normEmail } });
+      const activeTenant = await prisma.tenant.findFirst({ where: { email: normEmail } });
+      if (activeCompany || activeOwner || activeTenant) {
+        throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+      } else {
+        // Clean up orphaned user record
+        await prisma.user.deleteMany({ where: { email: normEmail } });
+      }
     }
 
     // Map user-facing "Maintenance" role to "Maintenance Staff"
@@ -544,8 +586,20 @@ export class SuperAdminService {
     });
     return prisma.$transaction(async (tx) => {
       if (companyUser && companyUser.email) {
-        await tx.user.deleteMany({
-          where: { email: companyUser.email },
+        const normEmail = companyUser.email.trim().toLowerCase();
+        const users = await tx.user.findMany({ where: { email: normEmail }, select: { id: true } });
+        const userIds = users.map(u => u.id);
+        if (userIds.length > 0) {
+          await tx.auditLog.updateMany({
+            where: { userId: { in: userIds } },
+            data: { userId: null }
+          });
+          await tx.user.deleteMany({
+            where: { email: normEmail },
+          });
+        }
+        await tx.vendor.deleteMany({
+          where: { email: normEmail },
         });
       }
       return tx.companyUser.delete({

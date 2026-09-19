@@ -30,14 +30,22 @@ export class OwnerController {
       const companyId = await getManagerCompanyId(req, req.body.companyId || req.user?.companyId);
 
       if (email) {
-        const existingUser = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
-        if (existingUser) {
+        const normEmail = email.trim().toLowerCase();
+        const existingOwner = await prisma.owner.findFirst({ where: { email: normEmail } });
+        if (existingOwner) {
           throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
         }
 
-        const existingOwner = await prisma.owner.findUnique({ where: { email: email.trim().toLowerCase() } });
-        if (existingOwner) {
-          throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+        const existingUser = await prisma.user.findFirst({ where: { email: normEmail } });
+        if (existingUser) {
+          const activeCompany = await prisma.company.findFirst({ where: { email: normEmail } });
+          const activeTenant = await prisma.tenant.findFirst({ where: { email: normEmail } });
+          if (activeCompany || activeTenant) {
+            throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+          } else {
+            // Remove orphaned user record to allow fresh owner creation
+            await prisma.user.deleteMany({ where: { email: normEmail } });
+          }
         }
       }
 
@@ -250,11 +258,20 @@ export class OwnerController {
             });
           }
 
-          // 3.5 Delete associated user record
+          // 3.5 Delete associated user record safely
           if (ownerExists.email) {
-            await tx.user.deleteMany({
-              where: { email: ownerExists.email },
-            });
+            const normEmail = ownerExists.email.trim().toLowerCase();
+            const users = await tx.user.findMany({ where: { email: normEmail }, select: { id: true } });
+            const userIds = users.map(u => u.id);
+            if (userIds.length > 0) {
+              await tx.auditLog.updateMany({
+                where: { userId: { in: userIds } },
+                data: { userId: null }
+              });
+              await tx.user.deleteMany({
+                where: { email: normEmail },
+              });
+            }
           }
 
           // 4. Finally delete the owner record

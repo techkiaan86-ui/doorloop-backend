@@ -74,6 +74,26 @@ export class TenantController {
         }
       }
 
+      if (email) {
+        const normEmail = email.trim().toLowerCase();
+        const existingTenant = await prisma.tenant.findFirst({ where: { email: normEmail } });
+        if (existingTenant) {
+          throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+        }
+
+        const existingUser = await prisma.user.findFirst({ where: { email: normEmail } });
+        if (existingUser) {
+          const activeCompany = await prisma.company.findFirst({ where: { email: normEmail } });
+          const activeOwner = await prisma.owner.findFirst({ where: { email: normEmail } });
+          if (activeCompany || activeOwner) {
+            throw new AppError('Email address is already registered.', 400, 'DUPLICATE_EMAIL');
+          } else {
+            // Remove orphaned user record to allow fresh tenant creation
+            await prisma.user.deleteMany({ where: { email: normEmail } });
+          }
+        }
+      }
+
       if (unitId && companyId) {
         const unit = await prisma.unit.findFirst({
           where: { id: unitId, property: { companyId } },
@@ -330,11 +350,20 @@ export class TenantController {
           where: { tenantId: id },
         });
 
-        // 6. Delete login user
+        // 6. Delete login user safely
         if (tenant.email) {
-          await tx.user.deleteMany({
-            where: { email: tenant.email },
-          });
+          const normEmail = tenant.email.trim().toLowerCase();
+          const users = await tx.user.findMany({ where: { email: normEmail }, select: { id: true } });
+          const userIds = users.map(u => u.id);
+          if (userIds.length > 0) {
+            await tx.auditLog.updateMany({
+              where: { userId: { in: userIds } },
+              data: { userId: null }
+            });
+            await tx.user.deleteMany({
+              where: { email: normEmail },
+            });
+          }
         }
 
         // 7. Finally, delete the Tenant itself
