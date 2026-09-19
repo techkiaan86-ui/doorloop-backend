@@ -124,6 +124,18 @@ export class SuperAdminService {
     if (!data.isSuperadmin && !isFreeTrial) {
       const verifyResult = await authorizeNetService.verifyTransaction(gatewayTxId);
       if (!verifyResult.success) {
+        try {
+          await this.createInvoice({
+            companyName: data.name,
+            amount: planPrice,
+            status: 'Failed',
+            dueDate: new Date(),
+            paidDate: null,
+            transactionId: gatewayTxId || `FAILED-${Date.now()}`,
+          });
+        } catch (e) {
+          console.error('Failed invoice log error:', e);
+        }
         throw new Error(`Payment verification failed: ${verifyResult.message}`);
       }
       planPrice = verifyResult.amount || planPrice;
@@ -681,21 +693,54 @@ export class SuperAdminService {
     const isYearly = data.planType === 'YEARLY';
     const amount = isYearly ? 120 : 15;
     const planName = isYearly ? 'Yearly Plan ($10/mo = $120/yr)' : 'Monthly Plan ($15/mo)';
-    let gatewayTxId = data.transactionId || `AUTHNET-TX-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    let gatewayTxId = data.transactionId || '';
 
-    // Verify card basic sanity if passed
-    if (data.cardNumber && data.cardNumber.replace(/\s+/g, '').length < 13) {
-      // Record failed invoice log
-      await this.createInvoice({
-        companyId: company.id,
-        companyName: company.name,
+    // Execute Authorize.Net payment authorization if card details are passed
+    if (data.cardNumber) {
+      if (data.cardNumber.replace(/\s+/g, '').length < 13) {
+        await this.createInvoice({
+          companyId: company.id,
+          companyName: company.name,
+          amount,
+          status: 'Failed',
+          dueDate: new Date(),
+          paidDate: null,
+          transactionId: `FAILED-${Date.now()}`,
+        });
+        throw new AppError('Invalid credit card number provided.', 400, 'PAYMENT_FAILED');
+      }
+
+      const authNetResult = await authorizeNetService.chargePayment({
         amount,
-        status: 'Failed',
-        dueDate: new Date(),
-        paidDate: null,
-        transactionId: gatewayTxId,
+        cardNumber: data.cardNumber,
+        expirationDate: data.cardExpiry,
+        cvv: data.cardCvv,
+        description: `SaaS Subscription: ${planName} for ${company.name}`,
+      }).catch((e: any) => {
+        console.error('Authorize.Net payment error:', e);
+        return null;
       });
-      throw new AppError('Invalid credit card number provided.', 400, 'PAYMENT_FAILED');
+
+      if (authNetResult && !authNetResult.success) {
+        await this.createInvoice({
+          companyId: company.id,
+          companyName: company.name,
+          amount,
+          status: 'Failed',
+          dueDate: new Date(),
+          paidDate: null,
+          transactionId: authNetResult.transactionId || `FAILED-${Date.now()}`,
+        });
+        throw new AppError(`Payment failed via Authorize.Net: ${authNetResult.message}`, 400, 'PAYMENT_FAILED');
+      }
+
+      if (authNetResult && authNetResult.transactionId) {
+        gatewayTxId = authNetResult.transactionId;
+      }
+    }
+
+    if (!gatewayTxId) {
+      gatewayTxId = `AUTHNET-TX-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     }
 
     const now = new Date();

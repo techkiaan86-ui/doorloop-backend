@@ -55,11 +55,17 @@ export class AuthService {
         if (planEndsAt && now > planEndsAt) {
           if (graceEndsAt && now <= graceEndsAt) {
             isInGracePeriod = true;
-            isAccessBlocked = false; // Grace period active: 1 week extension allowed with popup warning
+            isAccessBlocked = false; // Grace period active: 1 week extension allowed with warning banner
           } else {
             isAccessBlocked = true; // Grace period ended: Service OFF
           }
         }
+      }
+
+      // If subscription is blocked AND user is NOT Property Manager or SuperAdmin (e.g. Tenant, Owner, Staff), block login completely!
+      const roleName = user.role?.name || '';
+      if (isAccessBlocked && roleName !== 'Property Manager' && roleName !== 'Super Admin' && roleName !== 'Admin') {
+        throw new AppError('Your company subscription has expired. Please contact your Property Manager to renew.', 403, 'COMPANY_SUBSCRIPTION_EXPIRED');
       }
     }
 
