@@ -6,6 +6,7 @@ import { AppError } from '../utils/appError.js';
 import bcrypt from 'bcrypt';
 import cloudinary from '../config/cloudinary.js';
 import { getManagerCompanyId } from '../utils/companyHelper.js';
+import { ensureRole } from '../utils/roleHelper.js';
 
 export class TenantController {
   async getAll(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -108,26 +109,19 @@ export class TenantController {
       });
 
       if (password) {
-        let role = await prisma.role.findUnique({
-          where: { name: 'Tenant' },
+        const role = await ensureRole('Tenant');
+        const passwordHash = await bcrypt.hash(password, 12);
+        await prisma.user.create({
+          data: {
+            email,
+            passwordHash,
+            firstName: firstName || 'Tenant',
+            lastName: lastName || 'User',
+            phone: phone || null,
+            roleId: role.id,
+            companyId,
+          },
         });
-        if (!role) {
-          role = await prisma.role.findFirst() as any;
-        }
-        if (role) {
-          const passwordHash = await bcrypt.hash(password, 12);
-          await prisma.user.create({
-            data: {
-              email,
-              passwordHash,
-              firstName: firstName || 'Tenant',
-              lastName: lastName || 'User',
-              phone: phone || null,
-              roleId: role.id,
-              companyId,
-            },
-          });
-        }
       }
 
       return sendSuccess({ res, statusCode: 201, data: tenant });
@@ -263,25 +257,18 @@ export class TenantController {
             },
           });
         } else {
-          let role = await prisma.role.findUnique({
-            where: { name: 'Tenant' },
+          const role = await ensureRole('Tenant');
+          await prisma.user.create({
+            data: {
+              email,
+              passwordHash,
+              firstName: firstName || 'Tenant',
+              lastName: lastName || 'User',
+              phone: phone || null,
+              roleId: role.id,
+              companyId,
+            },
           });
-          if (!role) {
-            role = await prisma.role.findFirst() as any;
-          }
-          if (role) {
-            await prisma.user.create({
-              data: {
-                email,
-                passwordHash,
-                firstName: firstName || 'Tenant',
-                lastName: lastName || 'User',
-                phone: phone || null,
-                roleId: role.id,
-                companyId,
-              },
-            });
-          }
         }
       }
 

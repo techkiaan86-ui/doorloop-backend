@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import bcrypt from 'bcrypt';
 import { getManagerCompanyId } from '../utils/companyHelper.js';
 import { AppError } from '../utils/appError.js';
+import { ensureRole } from '../utils/roleHelper.js';
 
 export class OwnerController {
   async getAll(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -58,28 +59,21 @@ export class OwnerController {
       }
 
       if (password) {
-        let role = await prisma.role.findUnique({
-          where: { name: 'Owner' },
+        const role = await ensureRole('Owner');
+        const passwordHash = await bcrypt.hash(password, 12);
+        const [first = '', ...lastParts] = resolvedName.split(' ');
+        const last = lastParts.join(' ') || 'Owner';
+        await prisma.user.create({
+          data: {
+            email,
+            passwordHash,
+            firstName: first || 'Owner',
+            lastName: last,
+            phone: phone || null,
+            roleId: role.id,
+            companyId,
+          },
         });
-        if (!role) {
-          role = await prisma.role.findFirst() as any;
-        }
-        if (role) {
-          const passwordHash = await bcrypt.hash(password, 12);
-          const [first = '', ...lastParts] = resolvedName.split(' ');
-          const last = lastParts.join(' ') || 'Owner';
-          await prisma.user.create({
-            data: {
-              email,
-              passwordHash,
-              firstName: first || 'Owner',
-              lastName: last,
-              phone: phone || null,
-              roleId: role.id,
-              companyId,
-            },
-          });
-        }
       }
 
       return sendSuccess({ res, statusCode: 201, data: owner });
@@ -142,25 +136,18 @@ export class OwnerController {
             },
           });
         } else {
-          let role = await prisma.role.findUnique({
-            where: { name: 'Owner' },
+          const role = await ensureRole('Owner');
+          await prisma.user.create({
+            data: {
+              email,
+              passwordHash,
+              firstName: first || 'Owner',
+              lastName: last,
+              phone: phone || null,
+              roleId: role.id,
+              companyId,
+            },
           });
-          if (!role) {
-            role = await prisma.role.findFirst() as any;
-          }
-          if (role) {
-            await prisma.user.create({
-              data: {
-                email,
-                passwordHash,
-                firstName: first || 'Owner',
-                lastName: last,
-                phone: phone || null,
-                roleId: role.id,
-                companyId,
-              },
-            });
-          }
         }
       }
 

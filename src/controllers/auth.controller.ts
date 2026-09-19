@@ -5,6 +5,7 @@ import { authorizeNetService } from '../services/authorizeNet.service';
 import { sendSuccess } from '../utils/apiResponse';
 import prisma from '../config/database';
 import { AppError } from '../utils/appError';
+import { ensureRole } from '../utils/roleHelper';
 import bcrypt from 'bcrypt';
 
 export class AuthController {
@@ -148,13 +149,7 @@ export class AuthController {
 
         const passwordHash = await bcrypt.hash(password, 12);
 
-        let role = await tx.role.findUnique({ where: { name: 'Tenant' } });
-        if (!role) {
-          role = await tx.role.findFirst() as any;
-        }
-        if (!role) {
-          throw new AppError('Tenant role not found in database.', 500, 'ROLE_NOT_FOUND');
-        }
+        const role = await ensureRole('Tenant');
 
         const tenant = await tx.tenant.create({
           data: {

@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { ensureRole } from '../utils/roleHelper';
 import prisma from '../config/database';
 import { getManagerCompanyId } from '../utils/companyHelper';
 import { authorizeNetService } from './authorizeNet.service';
@@ -70,9 +71,9 @@ export class SuperAdminService {
       throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
     }
 
-    const existingUser = await prisma.user.findFirst({ where: { email: normalizedEmail } });
-    if (existingUser && existingUser.companyId) {
-      const userCompany = await prisma.company.findUnique({ where: { id: existingUser.companyId } });
+    const existingUserCheck = await prisma.user.findFirst({ where: { email: normalizedEmail } });
+    if (existingUserCheck && existingUserCheck.companyId) {
+      const userCompany = await prisma.company.findUnique({ where: { id: existingUserCheck.companyId } });
       if (userCompany) {
         throw new AppError('Email address is already registered with a company. Please sign in instead.', 400, 'DUPLICATE_EMAIL');
       }
@@ -196,7 +197,7 @@ export class SuperAdminService {
 
     // Create or update the matching login User for the company
     const passwordHash = await bcrypt.hash(data.password || 'admin123', 12);
-    const propertyManagerRole = await prisma.role.findFirst({ where: { name: 'Property Manager' } });
+    const propertyManagerRole = await ensureRole('Property Manager');
 
     try {
       await prisma.notification.create({
@@ -216,33 +217,32 @@ export class SuperAdminService {
     const firstName = nameParts[0] || 'Admin';
     const lastName = nameParts.slice(1).join(' ') || 'User';
 
-    if (propertyManagerRole) {
-      const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
-      if (existingUser) {
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: {
-            firstName,
-            lastName,
-            passwordHash,
-            companyId: company.id,
-            roleId: propertyManagerRole.id,
-          },
-        });
-      } else {
-        await prisma.user.create({
-          data: {
-            email: data.email,
-            passwordHash,
-            firstName,
-            lastName,
-            phone: data.phone,
-            roleId: propertyManagerRole.id,
-            companyId: company.id,
-            status: 'Active',
-          },
-        });
-      }
+    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    if (existingUser) {
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          firstName,
+          lastName,
+          passwordHash,
+          companyId: company.id,
+          roleId: propertyManagerRole.id,
+          status: 'Active',
+        },
+      });
+    } else {
+      await prisma.user.create({
+        data: {
+          email: data.email,
+          passwordHash,
+          firstName,
+          lastName,
+          phone: data.phone,
+          roleId: propertyManagerRole.id,
+          companyId: company.id,
+          status: 'Active',
+        },
+      });
     }
 
     // Create or update matching CompanyUser record for platform-users page list
@@ -465,10 +465,8 @@ export class SuperAdminService {
       });
     }
 
-    // 2. Fetch the corresponding Role record from DB
-    const roleObj = await prisma.role.findFirst({
-      where: { name: mappedRole },
-    });
+    // 2. Fetch or create the corresponding Role record from DB
+    const roleObj = await ensureRole(mappedRole);
 
     if (roleObj) {
       const passwordHash = await bcrypt.hash(data.password || 'staff123', 12);

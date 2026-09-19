@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import prisma from '../config/database';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../utils/appError';
+import { ensureRole } from '../utils/roleHelper';
 
 export class AuthService {
   async login(email: string, pass: string) {
@@ -69,11 +70,26 @@ export class AuthService {
       }
     }
 
+    let finalRoleName = user.role?.name || '';
+    if (compObj && compObj.email && compObj.email.trim().toLowerCase() === user.email.trim().toLowerCase()) {
+      finalRoleName = 'Property Manager';
+      if (user.role?.name !== 'Property Manager') {
+        const pmRole = await ensureRole('Property Manager');
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { roleId: pmRole.id }
+        }).catch(() => {});
+      }
+    }
+    if (!finalRoleName) {
+      finalRoleName = user.companyId ? 'Property Manager' : 'Super Admin';
+    }
+
     const payload = {
       userId: user.id,
       email: user.email,
       roleId: user.roleId,
-      roleName: user.role?.name || 'Super Admin',
+      roleName: finalRoleName,
       companyId: user.companyId || undefined,
     };
 
@@ -87,7 +103,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         roleId: user.roleId,
-        roleName: user.role?.name || 'Super Admin',
+        roleName: finalRoleName,
         companyId: user.companyId,
         companyName: compObj?.name || null,
         planName: compObj?.planName || null,
