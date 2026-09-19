@@ -572,11 +572,9 @@ export class SuperAdminService {
       // Purge any old legacy plan names like Starter, Professional, Enterprise
       await prisma.saaSPlan.deleteMany({
         where: {
-          NOT: [
-            { name: '14-Day Free Trial' },
-            { name: 'Monthly Plan' },
-            { name: 'Yearly Plan' },
-          ],
+          name: {
+            notIn: ['14-Day Free Trial', 'Monthly Plan', 'Yearly Plan'],
+          },
         },
       }).catch(() => {});
 
@@ -584,8 +582,17 @@ export class SuperAdminService {
         const existing = await prisma.saaSPlan.findUnique({ where: { name: def.name } }).catch(() => null);
         if (!existing) {
           await prisma.saaSPlan.create({ data: def }).catch(() => {});
-        } else if (existing.price !== def.price) {
-          await prisma.saaSPlan.update({ where: { name: def.name }, data: { price: def.price, billingCycle: def.billingCycle, maxProperties: 999999, maxUnits: 999999 } }).catch(() => {});
+        } else if (existing.price !== def.price || existing.features !== def.features || existing.billingCycle !== def.billingCycle) {
+          await prisma.saaSPlan.update({
+            where: { name: def.name },
+            data: {
+              price: def.price,
+              billingCycle: def.billingCycle,
+              maxProperties: 999999,
+              maxUnits: 999999,
+              features: def.features,
+            },
+          }).catch(() => {});
         }
       }
 
