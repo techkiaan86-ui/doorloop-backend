@@ -541,24 +541,59 @@ export class SuperAdminService {
 
   // SaaS Subscription Plans
   async getPlans() {
-    let plans = await prisma.saaSPlan.findMany({
-      orderBy: { price: 'asc' },
-    });
-    const hasFreeTrial = plans.some(p => p.name.toLowerCase().includes('trial') || p.price === 0);
-    if (!hasFreeTrial) {
-      await prisma.saaSPlan.create({
-        data: {
-          name: '14-Day Free Trial',
-          price: 0,
-          billingCycle: '14 Days Free',
-          maxProperties: 10,
-          maxUnits: 20,
-          features: '14 Days Full Access, Up to 10 properties, Basic tenant screening, Standard ledger billing',
+    const planDefaults = [
+      {
+        name: '14-Day Free Trial',
+        price: 0,
+        billingCycle: '14 Days Free',
+        maxProperties: 999999,
+        maxUnits: 999999,
+        features: 'Unlimited Properties & Units, Tenant & Lease Tracking, Maintenance Work Orders, Basic Financial Ledger, 14 Days Full Access',
+      },
+      {
+        name: 'Monthly Plan',
+        price: 15,
+        billingCycle: 'Monthly',
+        maxProperties: 999999,
+        maxUnits: 999999,
+        features: 'Unlimited Properties & Units, Full Accounting & General Ledger, Rent Collection & Online Invoicing, WhatsApp Communications, 1-Week Grace Period',
+      },
+      {
+        name: 'Yearly Plan',
+        price: 120,
+        billingCycle: 'Annual',
+        maxProperties: 999999,
+        maxUnits: 999999,
+        features: 'Unlimited Properties & Units, Full Accounting & Financial Reports, Rent Collection & Reminders, WhatsApp Integration, Priority Support & 1-Week Grace Period',
+      },
+    ];
+
+    try {
+      // Purge any old legacy plan names like Starter, Professional, Enterprise
+      await prisma.saaSPlan.deleteMany({
+        where: {
+          NOT: [
+            { name: '14-Day Free Trial' },
+            { name: 'Monthly Plan' },
+            { name: 'Yearly Plan' },
+          ],
         },
-      });
-      plans = await prisma.saaSPlan.findMany({ orderBy: { price: 'asc' } });
+      }).catch(() => {});
+
+      for (const def of planDefaults) {
+        const existing = await prisma.saaSPlan.findUnique({ where: { name: def.name } }).catch(() => null);
+        if (!existing) {
+          await prisma.saaSPlan.create({ data: def }).catch(() => {});
+        } else if (existing.price !== def.price) {
+          await prisma.saaSPlan.update({ where: { name: def.name }, data: { price: def.price, billingCycle: def.billingCycle, maxProperties: 999999, maxUnits: 999999 } }).catch(() => {});
+        }
+      }
+
+      const dbPlans = await prisma.saaSPlan.findMany({ orderBy: { price: 'asc' } }).catch(() => []);
+      return dbPlans.length > 0 ? dbPlans : planDefaults;
+    } catch (e) {
+      return planDefaults;
     }
-    return plans;
   }
 
   async createPlan(data: { name: string; price: number; billingCycle?: string; maxProperties?: number; maxUnits?: number; features?: string }) {
@@ -567,8 +602,8 @@ export class SuperAdminService {
         name: data.name,
         price: parseFloat(data.price as any),
         billingCycle: data.billingCycle || 'Monthly',
-        maxProperties: data.maxProperties || 50,
-        maxUnits: data.maxUnits || 500,
+        maxProperties: data.maxProperties || 999999,
+        maxUnits: data.maxUnits || 999999,
         features: data.features || 'Unlimited Users, Advanced Analytics, Automated Workflows',
       },
     });
@@ -594,15 +629,107 @@ export class SuperAdminService {
     });
   }
 
-  // SaaS Invoices
+  // SaaS Invoices & Reporting Metrics
   async getInvoices() {
-    return prisma.saaSInvoice.findMany({
+    const invoices = await prisma.saaSInvoice.findMany({
       include: { company: true },
       orderBy: { createdAt: 'desc' },
     });
+
+    const companies = await prisma.company.findMany();
+    let freeTrialCount = 0;
+    let monthlyPlanCount = 0;
+    let yearlyPlanCount = 0;
+
+    companies.forEach(c => {
+      const compAny = c as any;
+      const pName = (compAny.planName || '').toLowerCase();
+      const pType = compAny.planType || (pName.includes('trial') || pName.includes('free') ? 'FREE_TRIAL' : (pName.includes('yearly') || pName.includes('annual') ? 'YEARLY' : 'MONTHLY'));
+      if (pType === 'FREE_TRIAL') freeTrialCount++;
+      else if (pType === 'YEARLY') yearlyPlanCount++;
+      else monthlyPlanCount++;
+    });
+
+    const paidInvoices = invoices.filter(inv => inv.status === 'Paid');
+    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+
+    return {
+      invoices,
+      metrics: {
+        freeTrialCount,
+        monthlyPlanCount,
+        yearlyPlanCount,
+        totalInvoices: invoices.length,
+        totalRevenue,
+      },
+    };
   }
 
-  async createInvoice(data: { companyId?: string; companyName: string; amount: number; status?: string; dueDate?: string | Date; paidDate?: string | Date; transactionId?: string }) {
+  async processSubscriptionPayment(data: { companyId: string; planType: 'MONTHLY' | 'YEARLY'; cardNumber?: string; cardExpiry?: string; cardCvv?: string; cardName?: string; transactionId?: string }) {
+    const company = await prisma.company.findUnique({ where: { id: data.companyId } });
+    if (!company) {
+      throw new AppError('Company not found.', 404, 'NOT_FOUND');
+    }
+
+    const isYearly = data.planType === 'YEARLY';
+    const amount = isYearly ? 120 : 15;
+    const planName = isYearly ? 'Yearly Plan ($10/mo = $120/yr)' : 'Monthly Plan ($15/mo)';
+    let gatewayTxId = data.transactionId || `AUTHNET-TX-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    // Verify card basic sanity if passed
+    if (data.cardNumber && data.cardNumber.replace(/\s+/g, '').length < 13) {
+      // Record failed invoice log
+      await this.createInvoice({
+        companyId: company.id,
+        companyName: company.name,
+        amount,
+        status: 'Failed',
+        dueDate: new Date(),
+        paidDate: null,
+        transactionId: gatewayTxId,
+      });
+      throw new AppError('Invalid credit card number provided.', 400, 'PAYMENT_FAILED');
+    }
+
+    const now = new Date();
+    const durationDays = isYearly ? 365 : 30;
+    const planEndsAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    const graceEndsAt = new Date(planEndsAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    // Update Company subscription
+    const updatedCompany = await prisma.company.update({
+      where: { id: company.id },
+      data: {
+        planName,
+        planType: data.planType,
+        planEndsAt,
+        graceEndsAt,
+        status: 'Active',
+        maxProperties: 999999,
+        maxUnits: 999999,
+      } as any,
+    });
+
+    // Create Paid Invoice log
+    const invoice = await this.createInvoice({
+      companyId: company.id,
+      companyName: company.name,
+      amount,
+      status: 'Paid',
+      dueDate: now,
+      paidDate: now,
+      transactionId: gatewayTxId,
+    });
+
+    return {
+      success: true,
+      message: `Subscription updated successfully to ${planName}.`,
+      company: updatedCompany,
+      invoice,
+    };
+  }
+
+  async createInvoice(data: { companyId?: string; companyName: string; amount: number; status?: string; dueDate?: string | Date; paidDate?: string | Date | null; transactionId?: string }) {
     let companyId = data.companyId;
     if (!companyId) {
       const existing = await prisma.company.findFirst({ where: { name: data.companyName } });

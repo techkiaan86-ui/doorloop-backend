@@ -33,12 +33,32 @@ export class AuthService {
     }
 
     let isTrialExpired = false;
+    let isInGracePeriod = false;
+    let isAccessBlocked = false;
+
     const compObj = user.company as any;
     if (compObj) {
-      if (compObj.trialEndsAt && new Date(compObj.trialEndsAt) < new Date()) {
-        const pName = (compObj.planName || '').toLowerCase();
-        if (pName.includes('free') || pName.includes('trial')) {
+      const now = new Date();
+      const pName = (compObj.planName || '').toLowerCase();
+      const pType = compObj.planType || (pName.includes('trial') || pName.includes('free') ? 'FREE_TRIAL' : (pName.includes('yearly') || pName.includes('annual') ? 'YEARLY' : 'MONTHLY'));
+      
+      const planEndsAt = compObj.planEndsAt ? new Date(compObj.planEndsAt) : (compObj.trialEndsAt ? new Date(compObj.trialEndsAt) : null);
+      const graceEndsAt = compObj.graceEndsAt ? new Date(compObj.graceEndsAt) : (planEndsAt && pType !== 'FREE_TRIAL' ? new Date(planEndsAt.getTime() + 7 * 24 * 60 * 60 * 1000) : null);
+
+      if (pType === 'FREE_TRIAL') {
+        if (planEndsAt && now > planEndsAt) {
           isTrialExpired = true;
+          isAccessBlocked = true; // Free trial has 0 extension
+        }
+      } else {
+        // Paid Plan (Monthly or Yearly)
+        if (planEndsAt && now > planEndsAt) {
+          if (graceEndsAt && now <= graceEndsAt) {
+            isInGracePeriod = true;
+            isAccessBlocked = false; // Grace period active: 1 week extension allowed with popup warning
+          } else {
+            isAccessBlocked = true; // Grace period ended: Service OFF
+          }
         }
       }
     }
@@ -65,10 +85,15 @@ export class AuthService {
         companyId: user.companyId,
         companyName: compObj?.name || null,
         planName: compObj?.planName || null,
-        maxProperties: compObj?.maxProperties || 50,
-        maxUnits: compObj?.maxUnits || 500,
-        trialEndsAt: compObj?.trialEndsAt || null,
+        planType: compObj?.planType || 'FREE_TRIAL',
+        maxProperties: compObj?.maxProperties || 999999,
+        maxUnits: compObj?.maxUnits || 999999,
+        trialEndsAt: compObj?.trialEndsAt || compObj?.planEndsAt || null,
+        planEndsAt: compObj?.planEndsAt || compObj?.trialEndsAt || null,
+        graceEndsAt: compObj?.graceEndsAt || null,
         isTrialExpired,
+        isInGracePeriod,
+        isAccessBlocked,
       },
       accessToken,
       refreshToken,

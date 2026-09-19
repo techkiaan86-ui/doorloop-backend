@@ -666,10 +666,13 @@ model Company {
   contactName         String
   email               String               @unique
   phone               String
-  planName            String               @default("Pro Plan")
+  planName            String               @default("14-Day Free Trial")
+  planType            String               @default("FREE_TRIAL") // "FREE_TRIAL", "MONTHLY", "YEARLY"
   trialEndsAt         DateTime?
-  maxProperties       Int                  @default(50)
-  maxUnits            Int                  @default(500)
+  planEndsAt          DateTime?
+  graceEndsAt         DateTime?
+  maxProperties       Int                  @default(999999)
+  maxUnits            Int                  @default(999999)
   storageUsed         String               @default("1.2 GB")
   status              String               @default("Active")
   createdAt           DateTime             @default(now())
@@ -729,8 +732,8 @@ model SaaSPlan {
   name          String   @unique
   price         Float
   billingCycle  String   @default("Monthly")
-  maxProperties Int      @default(50)
-  maxUnits      Int      @default(500)
+  maxProperties Int      @default(999999)
+  maxUnits      Int      @default(999999)
   features      String   @db.Text
   createdAt     DateTime @default(now())
 
@@ -738,16 +741,17 @@ model SaaSPlan {
 }
 
 model SaaSInvoice {
-  id          String    @id @default(uuid())
-  companyId   String
-  companyName String
-  amount      Float
-  status      String    @default("Paid")
-  dueDate     DateTime
-  paidDate    DateTime?
+  id            String    @id @default(uuid())
+  companyId     String
+  companyName   String
+  planType      String?   @default("FREE_TRIAL")
+  amount        Float
+  status        String    @default("Paid")
+  dueDate       DateTime
+  paidDate      DateTime?
   transactionId String?
-  createdAt   DateTime  @default(now())
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId], map: "saas_invoices_companyId_fkey")
   @@map("saas_invoices")
